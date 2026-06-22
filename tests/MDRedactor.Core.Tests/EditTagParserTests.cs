@@ -208,6 +208,20 @@ public sealed class EditTagParserTests
     }
 
     [Fact]
+    public void Validate_NonContiguousIds_ReturnsNoErrors()
+    {
+        var markdown = string.Join(
+            "\r\n",
+            _serializer.BuildEditBlock(1, "Первый фрагмент", "Первый комментарий"),
+            _serializer.BuildEditBlock(2, "Второй фрагмент", "Второй комментарий"),
+            _serializer.BuildEditBlock(5, "Пятый фрагмент", "Пятый комментарий"));
+
+        var diagnostics = _validator.Validate(markdown);
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == EditDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void Validate_CommentWithDoubleHyphen_ReturnsError()
     {
         var markdown = Normalize("""

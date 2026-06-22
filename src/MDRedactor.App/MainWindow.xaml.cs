@@ -1,10 +1,13 @@
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using MDRedactor.App.ViewModels;
 using MDRedactor.Core.Documents;
+using MDRedactor.Core.EditTags;
 using MDRedactor.Core.Services;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
@@ -14,11 +17,13 @@ namespace MDRedactor.App;
 public partial class MainWindow : Window
 {
     private readonly IMarkdownFileService _fileService = new MarkdownFileService();
+    private readonly EditTagValidator _validator = new();
     private readonly MainWindowViewModel _viewModel;
     private MarkdownDocument? _currentDocument;
     private TaskCompletionSource<string?>? _pendingMarkdownRequest;
     private bool _editorReady;
     private bool _isSaving;
+    private bool _allowClose;
 
     public MainWindow()
     {
@@ -27,6 +32,7 @@ public partial class MainWindow : Window
         _viewModel = new MainWindowViewModel(OpenFileAsync, SaveFileAsync);
         DataContext = _viewModel;
         Loaded += OnLoaded;
+        Closing += OnClosing;
         Closed += OnClosed;
     }
 
@@ -40,6 +46,22 @@ public partial class MainWindow : Window
         if (EditorWebView.CoreWebView2 is not null)
         {
             EditorWebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+        }
+    }
+
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose || !_viewModel.HasUnsavedChanges)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+
+        if (await ConfirmUnsavedChangesAsync())
+        {
+            _allowClose = true;
+            Close();
         }
     }
 
@@ -63,12 +85,18 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidOperationException or COMException or WebView2RuntimeNotFoundException)
         {
+            AppLogger.LogError(ex, "Ошибка запуска WebView2");
             ShowStartupError($"Не удалось запустить WebView2. Установите WebView2 Runtime и повторите запуск.\n\n{ex.Message}");
         }
     }
 
     private async Task OpenFileAsync()
     {
+        if (!await ConfirmUnsavedChangesAsync())
+        {
+            return;
+        }
+
         var dialog = new OpenFileDialog
         {
             Title = "Открыть Markdown",
@@ -88,58 +116,105 @@ public partial class MainWindow : Window
             _currentDocument = document;
             _viewModel.CurrentFileTitle = document.FileName;
             _viewModel.HasUnsavedChanges = false;
-            _viewModel.StatusText = "Сохранено";
+            _viewModel.StatusText = document.Diagnostics.Count > 0
+                ? "Сохранено. Кодировка определена автоматически"
+                : "Сохранено";
+
+            foreach (var diagnostic in document.Diagnostics)
+            {
+                AppLogger.LogWarning($"Диагностика открытия: {diagnostic}", document.FilePath);
+            }
+
             SendDocumentToEditor(document);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
-            SetError($"Ошибка открытия: {ex.Message}");
+            AppLogger.LogError(ex, "Ошибка открытия Markdown-файла", dialog.FileName);
+            _viewModel.StatusText = "Ошибка открытия";
+            ShowMessage("Ошибка открытия", $"Не удалось открыть файл.\n\n{ex.Message}");
         }
     }
 
     private async Task SaveFileAsync()
     {
+        await SaveCurrentFileAsync();
+    }
+
+    private async Task<bool> SaveCurrentFileAsync()
+    {
         if (_currentDocument is null)
         {
             _viewModel.StatusText = "Нет файла";
-            return;
+            return false;
         }
 
         var markdown = await RequestMarkdownFromEditorAsync();
         if (markdown is null)
         {
-            SetError("Ошибка: редактор не вернул текст для сохранения.");
-            return;
+            _viewModel.StatusText = "Ошибка сохранения";
+            ShowMessage("Ошибка сохранения", "Редактор не вернул текст для сохранения.");
+            return false;
         }
 
-        await SaveMarkdownAsync(markdown);
+        return await SaveMarkdownAsync(markdown);
     }
 
-    private async Task SaveMarkdownAsync(string markdown)
+    private async Task<bool> SaveMarkdownAsync(string markdown)
     {
         if (_currentDocument is null)
         {
             _viewModel.StatusText = "Нет файла";
-            return;
+            return false;
         }
 
         if (_isSaving)
         {
-            return;
+            return false;
+        }
+
+        var errors = _validator.Validate(markdown)
+            .Where(diagnostic => diagnostic.Severity == EditDiagnosticSeverity.Error)
+            .ToList();
+        if (errors.Count > 0)
+        {
+            _viewModel.StatusText = "Ошибка разметки правок";
+            var details = FormatDiagnostics(errors);
+            AppLogger.LogWarning($"Сохранение заблокировано из-за ошибок разметки правок:\n{details}", _currentDocument.FilePath);
+            ShowMessage(
+                "Ошибка разметки правок",
+                "Файл не сохранен, потому что в служебной разметке правок есть ошибки.\n\n" + details);
+            return false;
+        }
+
+        if (FileWasChangedExternally(_currentDocument) && !ShowOverwriteExternalChangeDialog())
+        {
+            _viewModel.StatusText = "Есть несохраненные изменения";
+            return false;
         }
 
         try
         {
             _isSaving = true;
-            _currentDocument = _currentDocument with { Markdown = markdown };
-            await _fileService.WriteAsync(_currentDocument);
+            _viewModel.StatusText = "Сохранение...";
+
+            var documentToSave = _currentDocument with { Markdown = markdown };
+            var saveResult = await _fileService.SaveAtomicAsync(documentToSave);
+            _currentDocument = documentToSave with
+            {
+                LastWriteTimeUtc = saveResult.LastWriteTimeUtc,
+                BackupCreatedInSession = documentToSave.BackupCreatedInSession || saveResult.BackupCreated
+            };
             _viewModel.HasUnsavedChanges = false;
             _viewModel.StatusText = "Сохранено";
             SendDocumentToEditor(_currentDocument);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            SetError($"Ошибка сохранения: {ex.Message}");
+            AppLogger.LogError(ex, "Ошибка сохранения Markdown-файла", _currentDocument.FilePath);
+            _viewModel.StatusText = "Ошибка сохранения";
+            ShowMessage("Ошибка сохранения", $"Не удалось сохранить файл. Исходный файл не был перезаписан.\n\n{ex.Message}");
+            return false;
         }
         finally
         {
@@ -228,14 +303,181 @@ public partial class MainWindow : Window
                     var message = root.TryGetProperty("message", out var messageElement)
                         ? messageElement.GetString()
                         : "неизвестная ошибка";
+                    AppLogger.LogWarning($"Ошибка редактора: {message}", _currentDocument?.FilePath);
                     SetError($"Ошибка редактора: {message}");
                     break;
             }
         }
         catch (JsonException ex)
         {
+            AppLogger.LogError(ex, "Ошибка протокола WebView2");
             SetError($"Ошибка протокола редактора: {ex.Message}");
         }
+    }
+
+    private async Task<bool> ConfirmUnsavedChangesAsync()
+    {
+        if (!_viewModel.HasUnsavedChanges)
+        {
+            return true;
+        }
+
+        return ShowUnsavedChangesDialog() switch
+        {
+            UnsavedChangesChoice.Save => await SaveCurrentFileAsync(),
+            UnsavedChangesChoice.Discard => true,
+            _ => false
+        };
+    }
+
+    private bool FileWasChangedExternally(MarkdownDocument document)
+    {
+        if (document.LastWriteTimeUtc is null || !File.Exists(document.FilePath))
+        {
+            return false;
+        }
+
+        var currentWriteTimeUtc = new DateTimeOffset(File.GetLastWriteTimeUtc(document.FilePath), TimeSpan.Zero);
+        return currentWriteTimeUtc - document.LastWriteTimeUtc.Value > TimeSpan.FromSeconds(1);
+    }
+
+    private static string FormatDiagnostics(IReadOnlyList<EditDiagnostic> diagnostics)
+    {
+        var lines = diagnostics
+            .Take(8)
+            .Select(diagnostic =>
+            {
+                var edit = diagnostic.EditId is null ? string.Empty : $" Правка #{diagnostic.EditId}.";
+                return $"Строка {diagnostic.Line}, колонка {diagnostic.Column}.{edit} {diagnostic.Message}";
+            })
+            .ToList();
+
+        if (diagnostics.Count > lines.Count)
+        {
+            lines.Add($"Еще ошибок: {diagnostics.Count - lines.Count}.");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private UnsavedChangesChoice ShowUnsavedChangesDialog()
+    {
+        var dialog = CreateDialogWindow("Несохраненные изменения");
+        var panel = CreateDialogPanel();
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Есть несохраненные изменения. Сохранить перед закрытием?",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 18)
+        });
+
+        var result = UnsavedChangesChoice.Cancel;
+        var buttons = CreateDialogButtons();
+        buttons.Children.Add(CreateDialogButton("Сохранить", isPrimary: true, () =>
+        {
+            result = UnsavedChangesChoice.Save;
+            dialog.DialogResult = true;
+        }));
+        buttons.Children.Add(CreateDialogButton("Не сохранять", isPrimary: false, () =>
+        {
+            result = UnsavedChangesChoice.Discard;
+            dialog.DialogResult = true;
+        }));
+        buttons.Children.Add(CreateDialogButton("Отмена", isPrimary: false, () =>
+        {
+            result = UnsavedChangesChoice.Cancel;
+            dialog.DialogResult = false;
+        }));
+
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        dialog.ShowDialog();
+        return result;
+    }
+
+    private bool ShowOverwriteExternalChangeDialog()
+    {
+        var dialog = CreateDialogWindow("Файл изменен");
+        var panel = CreateDialogPanel();
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Файл был изменен другой программой. Перезаписать его?",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 18)
+        });
+
+        var overwrite = false;
+        var buttons = CreateDialogButtons();
+        buttons.Children.Add(CreateDialogButton("Перезаписать", isPrimary: true, () =>
+        {
+            overwrite = true;
+            dialog.DialogResult = true;
+        }));
+        buttons.Children.Add(CreateDialogButton("Отмена", isPrimary: false, () =>
+        {
+            overwrite = false;
+            dialog.DialogResult = false;
+        }));
+
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        dialog.ShowDialog();
+        return overwrite;
+    }
+
+    private void ShowMessage(string title, string message)
+    {
+        MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private Window CreateDialogWindow(string title)
+    {
+        return new Window
+        {
+            Title = title,
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            MinWidth = 420,
+            MaxWidth = 620,
+            Background = System.Windows.Media.Brushes.White
+        };
+    }
+
+    private static StackPanel CreateDialogPanel()
+    {
+        return new StackPanel
+        {
+            Margin = new Thickness(22)
+        };
+    }
+
+    private static StackPanel CreateDialogButtons()
+    {
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+    }
+
+    private static Button CreateDialogButton(string text, bool isPrimary, Action onClick)
+    {
+        var button = new Button
+        {
+            Content = text,
+            MinWidth = 104,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            IsDefault = isPrimary,
+            IsCancel = text == "Отмена"
+        };
+
+        button.Click += (_, _) => onClick();
+        return button;
     }
 
     private void SendDocumentToEditor(MarkdownDocument document)
@@ -312,3 +554,9 @@ public partial class MainWindow : Window
     }
 }
 
+internal enum UnsavedChangesChoice
+{
+    Save,
+    Discard,
+    Cancel
+}

@@ -123,9 +123,11 @@ describe('markdownTags', () => {
     const markdown = serializeMarkdownWithTags('Русский фрагмент', [
       annotation(1, 'Русский фрагмент', 'Новый комментарий с кириллицей', 0, 15),
     ]);
+    const parsed = parseTaggedMarkdown(markdown);
 
     expect(markdown).toContain('Новый комментарий с кириллицей');
     expect(markdown).toContain('ed-comm id="1"');
+    expect(parsed.diagnostics).toEqual([]);
   });
 
   it('многострочный комментарий сохраняется внутри ed-comm', () => {
@@ -172,6 +174,16 @@ describe('markdownTags', () => {
     expect(parsed.diagnostics).toEqual([]);
     expect(parsed.annotations[0].comment).toBe('Нельзя - ->, - - и - - - - внутри комментария');
     expect(parsed.annotations[0].comment).not.toContain('--');
+  });
+
+  it('сериализатор обезвреживает опасный комментарий перед отправкой host', () => {
+    const markdown = serializeMarkdownWithTags('Фрагмент', [
+      annotation(1, 'Фрагмент', 'Опасный --> комментарий -- перед сохранением', 0, 8),
+    ]);
+    const parsed = parseTaggedMarkdown(markdown);
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(parsed.annotations[0].comment).toBe('Опасный - -> комментарий - - перед сохранением');
   });
 });
 

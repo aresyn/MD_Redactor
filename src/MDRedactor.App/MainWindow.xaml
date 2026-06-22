@@ -12,6 +12,7 @@
         MinHeight="520"
         Background="#F4F6F8">
     <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenCommand}" />
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
     </Window.InputBindings>
 
@@ -84,4 +85,3 @@
         </Border>
     </Grid>
 </Window>
-
