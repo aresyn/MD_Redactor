@@ -34,7 +34,7 @@ declare global {
 
 export function postEditorMessage(message: EditorToHostMessage): void {
   if (!window.chrome?.webview) {
-    console.debug('Сообщение для host пропущено:', message);
+    console.debug('Сообщение для приложения пропущено:', message);
     return;
   }
 
@@ -44,7 +44,7 @@ export function postEditorMessage(message: EditorToHostMessage): void {
 export function onHostMessage(handler: (message: HostToEditorMessage) => void): void {
   window.chrome?.webview?.addEventListener('message', (event) => {
     if (!isHostMessage(event.data)) {
-      postEditorMessage({ type: 'editor.error', message: 'Получено неизвестное сообщение host.' });
+      postEditorMessage({ type: 'editor.error', message: 'Получено неизвестное сообщение приложения.' });
       return;
     }
 
@@ -60,4 +60,3 @@ function isHostMessage(value: unknown): value is HostToEditorMessage {
   const type = String((value as { type: unknown }).type);
   return type === 'host.loadDocument' || type === 'host.requestMarkdown' || type === 'host.setTheme';
 }
-

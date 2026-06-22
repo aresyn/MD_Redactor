@@ -1,10 +1,12 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using MDRedactor.App.ViewModels;
 using MDRedactor.Core.Documents;
 using MDRedactor.Core.EditTags;
@@ -21,6 +23,9 @@ public partial class MainWindow : Window
     private readonly MainWindowViewModel _viewModel;
     private MarkdownDocument? _currentDocument;
     private TaskCompletionSource<string?>? _pendingMarkdownRequest;
+    private AppThemePreference _themePreference;
+    private string _effectiveTheme = "light";
+    private bool _isSelectingTheme;
     private bool _editorReady;
     private bool _isSaving;
     private bool _allowClose;
@@ -28,6 +33,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _themePreference = AppSettingsStore.Load().Theme;
+        ApplyTheme(_themePreference, saveSettings: false);
+        SelectTheme(_themePreference);
 
         _viewModel = new MainWindowViewModel(OpenFileAsync, SaveFileAsync);
         DataContext = _viewModel;
@@ -110,9 +119,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        await OpenDocumentAsync(dialog.FileName);
+    }
+
+    private async Task OpenDocumentAsync(string filePath)
+    {
         try
         {
-            var document = await _fileService.ReadAsync(dialog.FileName);
+            var document = await _fileService.ReadAsync(filePath);
             _currentDocument = document;
             _viewModel.CurrentFileTitle = document.FileName;
             _viewModel.HasUnsavedChanges = false;
@@ -129,7 +143,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
-            AppLogger.LogError(ex, "Ошибка открытия Markdown-файла", dialog.FileName);
+            AppLogger.LogError(ex, "Ошибка открытия Markdown-файла", filePath);
             _viewModel.StatusText = "Ошибка открытия";
             ShowMessage("Ошибка открытия", $"Не удалось открыть файл.\n\n{ex.Message}");
         }
@@ -266,7 +280,7 @@ public partial class MainWindow : Window
             {
                 case "editor.ready":
                     _editorReady = true;
-                    PostToEditor(new { type = "host.setTheme", theme = "light" });
+                    SendThemeToEditor();
                     if (_currentDocument is not null)
                     {
                         SendDocumentToEditor(_currentDocument);
@@ -313,6 +327,152 @@ public partial class MainWindow : Window
             AppLogger.LogError(ex, "Ошибка протокола WebView2");
             SetError($"Ошибка протокола редактора: {ex.Message}");
         }
+    }
+
+    private async void OnWindowDrop(object sender, DragEventArgs e)
+    {
+        var filePath = GetMarkdownPathFromDrop(e);
+        if (filePath is null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+
+        if (!await ConfirmUnsavedChangesAsync())
+        {
+            return;
+        }
+
+        await OpenDocumentAsync(filePath);
+    }
+
+    private void OnWindowDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = GetMarkdownPathFromDrop(e) is null
+            ? DragDropEffects.None
+            : DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isSelectingTheme || ThemeSelector.SelectedItem is not ComboBoxItem item)
+        {
+            return;
+        }
+
+        var tag = item.Tag?.ToString();
+        if (Enum.TryParse<AppThemePreference>(tag, ignoreCase: true, out var theme))
+        {
+            ApplyTheme(theme, saveSettings: true);
+        }
+    }
+
+    private void ApplyTheme(AppThemePreference preference, bool saveSettings)
+    {
+        _themePreference = preference;
+        var dark = preference == AppThemePreference.Dark
+            || preference == AppThemePreference.System && IsSystemDarkTheme();
+        _effectiveTheme = dark ? "dark" : "light";
+
+        if (dark)
+        {
+            SetBrush("WindowBackgroundBrush", "#151A17");
+            SetBrush("SurfaceBrush", "#202822");
+            SetBrush("SurfaceMutedBrush", "#18201B");
+            SetBrush("BorderBrush", "#3B463F");
+            SetBrush("PrimaryTextBrush", "#EDF4EF");
+            SetBrush("MutedTextBrush", "#A8B6AD");
+            SetBrush("AccentBrush", "#91CFB7");
+            SetBrush("AccentSoftBrush", "#263D34");
+            SetBrush("WarningSurfaceBrush", "#3C2516");
+            SetBrush("WarningBorderBrush", "#B46A2A");
+            SetBrush("WarningTextBrush", "#FDBA74");
+        }
+        else
+        {
+            SetBrush("WindowBackgroundBrush", "#EEF3F0");
+            SetBrush("SurfaceBrush", "#FFFFFF");
+            SetBrush("SurfaceMutedBrush", "#F5F8F6");
+            SetBrush("BorderBrush", "#D7E0DA");
+            SetBrush("PrimaryTextBrush", "#17211D");
+            SetBrush("MutedTextBrush", "#60716A");
+            SetBrush("AccentBrush", "#3B7667");
+            SetBrush("AccentSoftBrush", "#E2F0EA");
+            SetBrush("WarningSurfaceBrush", "#FFF7ED");
+            SetBrush("WarningBorderBrush", "#FDBA74");
+            SetBrush("WarningTextBrush", "#7C2D12");
+        }
+
+        if (saveSettings)
+        {
+            AppSettingsStore.Save(new AppSettings { Theme = preference });
+        }
+
+        SendThemeToEditor();
+    }
+
+    private void SelectTheme(AppThemePreference preference)
+    {
+        _isSelectingTheme = true;
+        try
+        {
+            foreach (var item in ThemeSelector.Items.OfType<ComboBoxItem>())
+            {
+                if (string.Equals(item.Tag?.ToString(), preference.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    ThemeSelector.SelectedItem = item;
+                    return;
+                }
+            }
+
+            ThemeSelector.SelectedIndex = 0;
+        }
+        finally
+        {
+            _isSelectingTheme = false;
+        }
+    }
+
+    private void SendThemeToEditor()
+    {
+        if (_editorReady && EditorWebView.CoreWebView2 is not null)
+        {
+            PostToEditor(new { type = "host.setTheme", theme = _effectiveTheme });
+        }
+    }
+
+    private void SetBrush(string key, string hexColor)
+    {
+        Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor));
+    }
+
+    private static bool IsSystemDarkTheme()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            var value = key?.GetValue("AppsUseLightTheme");
+            return value is int appsUseLightTheme && appsUseLightTheme == 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            AppLogger.LogError(ex, "Не удалось определить системную тему Windows");
+            return false;
+        }
+    }
+
+    private static string? GetMarkdownPathFromDrop(DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            return null;
+        }
+
+        var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+        return files?
+            .FirstOrDefault(file => string.Equals(Path.GetExtension(file), ".md", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<bool> ConfirmUnsavedChangesAsync()
@@ -369,6 +529,7 @@ public partial class MainWindow : Window
         {
             Text = "Есть несохраненные изменения. Сохранить перед закрытием?",
             TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("PrimaryTextBrush"),
             Margin = new Thickness(0, 0, 0, 18)
         });
 
@@ -405,6 +566,7 @@ public partial class MainWindow : Window
         {
             Text = "Файл был изменен другой программой. Перезаписать его?",
             TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)FindResource("PrimaryTextBrush"),
             Margin = new Thickness(0, 0, 0, 18)
         });
 
@@ -443,7 +605,7 @@ public partial class MainWindow : Window
             SizeToContent = SizeToContent.WidthAndHeight,
             MinWidth = 420,
             MaxWidth = 620,
-            Background = System.Windows.Media.Brushes.White
+            Background = (Brush)FindResource("SurfaceBrush")
         };
     }
 
@@ -464,7 +626,7 @@ public partial class MainWindow : Window
         };
     }
 
-    private static Button CreateDialogButton(string text, bool isPrimary, Action onClick)
+    private Button CreateDialogButton(string text, bool isPrimary, Action onClick)
     {
         var button = new Button
         {
@@ -472,6 +634,9 @@ public partial class MainWindow : Window
             MinWidth = 104,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
+            Foreground = (Brush)FindResource("PrimaryTextBrush"),
+            Background = (Brush)FindResource(isPrimary ? "AccentSoftBrush" : "SurfaceMutedBrush"),
+            BorderBrush = (Brush)FindResource("BorderBrush"),
             IsDefault = isPrimary,
             IsCancel = text == "Отмена"
         };

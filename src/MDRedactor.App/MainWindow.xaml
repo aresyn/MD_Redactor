@@ -10,23 +10,52 @@
         Height="720"
         MinWidth="860"
         MinHeight="520"
-        Background="#F4F6F8">
+        AllowDrop="True"
+        DragOver="OnWindowDragOver"
+        Drop="OnWindowDrop"
+        Background="{DynamicResource WindowBackgroundBrush}">
     <Window.InputBindings>
         <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenCommand}" />
         <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
     </Window.InputBindings>
 
     <Window.Resources>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#EEF3F0" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#F5F8F6" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#D7E0DA" />
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#17211D" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#60716A" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#3B7667" />
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#E2F0EA" />
+        <SolidColorBrush x:Key="WarningSurfaceBrush" Color="#FFF7ED" />
+        <SolidColorBrush x:Key="WarningBorderBrush" Color="#FDBA74" />
+        <SolidColorBrush x:Key="WarningTextBrush" Color="#7C2D12" />
+
         <Style TargetType="Button">
             <Setter Property="MinWidth" Value="104" />
             <Setter Property="Height" Value="34" />
             <Setter Property="Padding" Value="16,0" />
             <Setter Property="Margin" Value="8,0,0,0" />
             <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinWidth" Value="126" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Margin" Value="8,0,0,0" />
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="RootGrid" Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -34,24 +63,40 @@
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                Padding="16,12"
-                Background="#FFFFFF"
-                BorderBrush="#D6DCE2"
+                Padding="18,13"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="False">
                 <StackPanel DockPanel.Dock="Left">
                     <TextBlock Text="MD Redactor"
                                FontSize="18"
                                FontWeight="SemiBold"
-                               Foreground="#15202B" />
+                               Foreground="{DynamicResource PrimaryTextBrush}" />
                     <TextBlock Text="{Binding CurrentFileTitle}"
                                Margin="0,2,0,0"
-                               Foreground="#64748B" />
+                               Foreground="{DynamicResource MutedTextBrush}" />
                 </StackPanel>
 
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Открыть" Command="{Binding OpenCommand}" />
-                    <Button Content="Сохранить" Command="{Binding SaveCommand}" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <TextBlock Text="Тема"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource MutedTextBrush}" />
+                        <ComboBox x:Name="ThemeSelector"
+                                  SelectionChanged="OnThemeSelectionChanged"
+                                  ToolTip="Выбор темы интерфейса">
+                            <ComboBoxItem Content="Системная" Tag="System" />
+                            <ComboBoxItem Content="Светлая" Tag="Light" />
+                            <ComboBoxItem Content="Темная" Tag="Dark" />
+                        </ComboBox>
+                    </StackPanel>
+                    <Button Content="Открыть"
+                            Command="{Binding OpenCommand}"
+                            ToolTip="Открыть Markdown-файл (Ctrl+O)" />
+                    <Button Content="Сохранить"
+                            Command="{Binding SaveCommand}"
+                            ToolTip="Сохранить текущий Markdown-файл (Ctrl+S)" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -60,11 +105,12 @@
             <wv2:WebView2 x:Name="EditorWebView" />
             <Border x:Name="StartupErrorPanel"
                     Visibility="Collapsed"
-                    Background="#FFF7ED"
-                    BorderBrush="#FDBA74"
+                    Background="{DynamicResource WarningSurfaceBrush}"
+                    BorderBrush="{DynamicResource WarningBorderBrush}"
                     BorderThickness="1"
                     Margin="24"
                     Padding="24"
+                    CornerRadius="8"
                     MaxWidth="760"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
@@ -72,16 +118,16 @@
                 <TextBlock x:Name="StartupErrorText"
                            TextWrapping="Wrap"
                            FontSize="15"
-                           Foreground="#7C2D12" />
+                           Foreground="{DynamicResource WarningTextBrush}" />
             </Border>
         </Grid>
 
         <Border Grid.Row="2"
-                Padding="16,8"
-                Background="#FFFFFF"
-                BorderBrush="#D6DCE2"
+                Padding="18,8"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,1,0,0">
-            <TextBlock Text="{Binding StatusText}" Foreground="#334155" />
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource MutedTextBrush}" />
         </Border>
     </Grid>
 </Window>

@@ -4,6 +4,7 @@ obj/
 .idea/
 node_modules/
 dist/
+artifacts/
 TestResults/
 *.user
 *.suo
@@ -17,4 +18,3 @@ TestResults/
 *.md.bak
 *.md.backup
 *.md~
-
