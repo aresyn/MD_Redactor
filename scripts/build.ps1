@@ -35,6 +35,9 @@ try {
 
     npm run build
     Assert-NativeSuccess -Step "npm run build"
+
+    npm test
+    Assert-NativeSuccess -Step "npm test"
 }
 finally {
     Pop-Location

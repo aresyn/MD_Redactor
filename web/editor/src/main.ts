@@ -1,6 +1,10 @@
 import './styles.css';
 import { onHostMessage, postEditorMessage } from './bridge';
 import type { HostToEditorMessage } from './bridge';
+import { EditorController } from './editor/editorController';
+import type { LoadedDocument } from './editor/types';
+import { showNotification } from './ui/notifications';
+import { applyTheme } from './ui/theme';
 
 const appElement = document.querySelector<HTMLDivElement>('#app');
 
@@ -19,12 +23,12 @@ app.innerHTML = `
           <div class="document-meta" id="document-meta">Кодировка: utf-8</div>
         </div>
       </div>
-      <textarea id="markdown-editor" spellcheck="true" placeholder="Откройте Markdown-файл в верхней панели приложения."></textarea>
+      <div class="document-scroll">
+        <div id="editor-host" class="document-page"></div>
+      </div>
     </section>
-    <aside class="changes-pane" aria-label="Правки">
-      <h2>Правки</h2>
-      <p>Панель будет подключена на следующих этапах.</p>
-    </aside>
+    <aside id="review-panel" class="changes-pane" aria-label="Правки"></aside>
+    <div id="notification" class="notification" role="status" aria-live="polite"></div>
   </main>
 `;
 
@@ -37,42 +41,42 @@ function requireElement<TElement extends Element>(selector: string): TElement {
   return element;
 }
 
-const editor = requireElement<HTMLTextAreaElement>('#markdown-editor');
 const documentTitle = requireElement<HTMLDivElement>('#document-title');
 const documentMeta = requireElement<HTMLDivElement>('#document-meta');
+const editorHost = requireElement<HTMLDivElement>('#editor-host');
+const reviewPanel = requireElement<HTMLElement>('#review-panel');
+const notification = requireElement<HTMLDivElement>('#notification');
 
-let isDirty = false;
 let currentFileName = 'Файл не открыт';
 let currentEncodingName = 'utf-8';
+
+const controller = new EditorController({
+  editorHost,
+  reviewHost: reviewPanel,
+  onDirtyChanged: (isDirty) => postEditorMessage({ type: 'editor.dirtyChanged', isDirty }),
+  onError: (message) => {
+    showNotification(notification, message, 'error');
+    postEditorMessage({ type: 'editor.error', message });
+  },
+});
 
 function updateDocumentInfo(): void {
   documentTitle.textContent = currentFileName;
   documentMeta.textContent = `Кодировка: ${currentEncodingName}`;
 }
 
-function setDirty(nextValue: boolean): void {
-  if (isDirty === nextValue) {
-    return;
-  }
-
-  isDirty = nextValue;
-  postEditorMessage({ type: 'editor.dirtyChanged', isDirty });
-}
-
 function requestSave(): void {
-  postEditorMessage({ type: 'editor.saveRequested', markdown: editor.value });
+  postEditorMessage({ type: 'editor.saveRequested', markdown: controller.getMarkdownWithTags() });
 }
 
 function loadDocument(message: Extract<HostToEditorMessage, { type: 'host.loadDocument' }>): void {
   currentFileName = message.fileName || 'Без имени';
   currentEncodingName = message.encodingName || 'utf-8';
-  editor.value = message.markdown ?? '';
   updateDocumentInfo();
-  setDirty(false);
-  editor.focus();
-}
 
-editor.addEventListener('input', () => setDirty(true));
+  controller.loadDocument(message satisfies LoadedDocument);
+  controller.focus();
+}
 
 window.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -91,11 +95,13 @@ onHostMessage((message) => {
         requestSave();
         break;
       case 'host.setTheme':
-        document.documentElement.dataset.theme = message.theme || 'light';
+        applyTheme(message.theme || 'light');
+        controller.setTheme(message.theme || 'light');
         break;
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    showNotification(notification, errorMessage, 'error');
     postEditorMessage({ type: 'editor.error', message: errorMessage });
   }
 });
