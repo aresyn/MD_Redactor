@@ -253,6 +253,24 @@ public sealed class EditTagParserTests
         Assert.DoesNotContain("ed-end", stripped, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Validate_WebEditorInlineMarkdownWithEmptyComment_ReturnsNoErrors()
+    {
+        var markdown = Normalize("""
+            Он <!-- ed-start id="3" -->устало посмотрел<!-- ed-comm id="3"
+
+            --><!-- ed-end id="3" --> в окно.
+            """);
+
+        var document = _parser.Parse(markdown);
+
+        Assert.False(document.HasErrors);
+        var edit = Assert.Single(document.Edits);
+        Assert.Equal(3, edit.Id);
+        Assert.Equal(string.Empty, edit.Comment);
+        Assert.Equal("устало посмотрел", edit.FragmentPlainText);
+    }
+
     private static string Normalize(string value)
     {
         return value.ReplaceLineEndings("\r\n");

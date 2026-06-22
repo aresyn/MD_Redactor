@@ -4,7 +4,10 @@ export type ReviewPanelOptions = {
   annotations: EditAnnotation[];
   diagnostics: EditDiagnostic[];
   activeId?: number;
+  focusCommentId?: number;
   onSelect(id: number): void;
+  onCommentFocus(id: number): void;
+  onCommentChange(id: number, comment: string): void;
 };
 
 export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOptions): void {
@@ -49,12 +52,29 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
 
   const list = document.createElement('div');
   list.className = 'review-list';
+  let commentToFocus: HTMLTextAreaElement | undefined;
 
   for (const annotation of options.annotations) {
-    const card = document.createElement('button');
-    card.type = 'button';
+    const card = document.createElement('div');
     card.className = annotation.id === options.activeId ? 'review-card review-card-active' : 'review-card';
-    card.addEventListener('click', () => options.onSelect(annotation.id));
+    card.tabIndex = 0;
+    card.addEventListener('click', (event) => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      options.onSelect(annotation.id);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        options.onSelect(annotation.id);
+      }
+    });
 
     const cardHeader = document.createElement('div');
     cardHeader.className = 'review-card-header';
@@ -73,11 +93,20 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
 
     const comment = document.createElement('textarea');
     comment.className = 'review-comment';
-    comment.readOnly = true;
     comment.value = annotation.comment;
+    comment.placeholder = 'Что нужно исправить в этом фрагменте?';
     comment.setAttribute('aria-label', `Комментарий к правке #${annotation.id}`);
+    comment.addEventListener('focus', () => options.onCommentFocus(annotation.id));
+    comment.addEventListener('input', () => options.onCommentChange(annotation.id, comment.value));
 
     card.append(cardHeader, preview, comment);
+
+    if (annotation.comment.trim().length === 0) {
+      const emptyComment = document.createElement('div');
+      emptyComment.className = 'review-warning';
+      emptyComment.textContent = 'Комментарий не заполнен';
+      card.append(emptyComment);
+    }
 
     if (annotation.warning) {
       const warning = document.createElement('div');
@@ -87,7 +116,18 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     }
 
     list.append(card);
+
+    if (annotation.id === options.focusCommentId) {
+      commentToFocus = comment;
+    }
   }
 
   container.append(list);
+
+  if (commentToFocus) {
+    window.requestAnimationFrame(() => {
+      commentToFocus?.focus();
+      commentToFocus?.select();
+    });
+  }
 }

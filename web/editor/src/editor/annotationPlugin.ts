@@ -10,7 +10,13 @@ type AnnotationPluginState = {
 };
 
 type AnnotationMeta =
-  | { type: 'setAnnotations'; annotations: EditAnnotation[] }
+  | {
+      type: 'setAnnotations';
+      annotations: EditAnnotation[];
+      activeId?: number;
+      shouldRender?: boolean;
+      markDirty?: boolean;
+    }
   | { type: 'activate'; id?: number };
 
 export const annotationPluginKey = new PluginKey<AnnotationPluginState>('edit-annotations');
@@ -27,10 +33,11 @@ export function createAnnotationPlugin(onActivate: (id: number) => void): Plugin
         const meta = transaction.getMeta(annotationPluginKey) as AnnotationMeta | undefined;
 
         if (meta?.type === 'setAnnotations') {
+          const activeId = meta.activeId ?? pluginState.activeId;
           return {
             annotations: meta.annotations,
-            decorations: buildDecorations(newState.doc, meta.annotations, pluginState.activeId),
-            activeId: pluginState.activeId,
+            decorations: buildDecorations(newState.doc, meta.annotations, activeId),
+            activeId,
           };
         }
 
@@ -95,8 +102,30 @@ export function setAnnotations(transaction: Transaction, annotations: EditAnnota
   return transaction.setMeta(annotationPluginKey, { type: 'setAnnotations', annotations } satisfies AnnotationMeta);
 }
 
+export function replaceAnnotations(
+  transaction: Transaction,
+  annotations: EditAnnotation[],
+  options: { activeId?: number; shouldRender?: boolean; markDirty?: boolean } = {},
+): Transaction {
+  return transaction.setMeta(annotationPluginKey, {
+    type: 'setAnnotations',
+    annotations,
+    activeId: options.activeId,
+    shouldRender: options.shouldRender,
+    markDirty: options.markDirty,
+  } satisfies AnnotationMeta);
+}
+
+export function setActiveAnnotation(transaction: Transaction, id?: number): Transaction {
+  return transaction.setMeta(annotationPluginKey, { type: 'activate', id } satisfies AnnotationMeta);
+}
+
+export function getAnnotationMeta(transaction: Transaction): AnnotationMeta | undefined {
+  return transaction.getMeta(annotationPluginKey) as AnnotationMeta | undefined;
+}
+
 export function activateAnnotation(view: EditorView, id?: number): void {
-  view.dispatch(view.state.tr.setMeta(annotationPluginKey, { type: 'activate', id } satisfies AnnotationMeta));
+  view.dispatch(setActiveAnnotation(view.state.tr, id));
 }
 
 export function getAnnotations(state: EditorState): EditAnnotation[] {

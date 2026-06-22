@@ -1,6 +1,15 @@
 import { EditorState } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import { activateAnnotation, getAnnotations, mapAnnotationsToDocument, setAnnotations } from './annotationPlugin';
+import {
+  activateAnnotation,
+  getAnnotationMeta,
+  getAnnotations,
+  mapAnnotationsToDocument,
+  replaceAnnotations,
+  setActiveAnnotation,
+  setAnnotations,
+} from './annotationPlugin';
+import { createEditFromSelection } from './editCommands';
 import { parseTaggedMarkdown } from './markdownTags';
 import { serializeDocumentToMarkdown, serializeMarkdownWithTags } from './markdownSerializer';
 import { createEditorPlugins, parseMarkdownToDoc } from './prosemirrorSetup';
@@ -12,6 +21,7 @@ export type EditorControllerOptions = {
   reviewHost: HTMLElement;
   onDirtyChanged(isDirty: boolean): void;
   onError(message: string): void;
+  onInfo(message: string): void;
 };
 
 export class EditorController {
@@ -19,10 +29,12 @@ export class EditorController {
   private readonly reviewHost: HTMLElement;
   private readonly onDirtyChanged: (isDirty: boolean) => void;
   private readonly onError: (message: string) => void;
+  private readonly onInfo: (message: string) => void;
   private view?: EditorView;
   private annotations: EditAnnotation[] = [];
   private diagnostics: EditDiagnostic[] = [];
   private activeId?: number;
+  private pendingFocusCommentId?: number;
   private isDirty = false;
 
   public constructor(options: EditorControllerOptions) {
@@ -30,6 +42,7 @@ export class EditorController {
     this.reviewHost = options.reviewHost;
     this.onDirtyChanged = options.onDirtyChanged;
     this.onError = options.onError;
+    this.onInfo = options.onInfo;
     this.renderReviewPanel();
   }
 
@@ -45,7 +58,27 @@ export class EditorController {
 
       const state = EditorState.create({
         doc,
-        plugins: createEditorPlugins((id) => this.selectAnnotation(id)),
+        plugins: createEditorPlugins({
+          onAnnotationActivate: (id) => this.selectAnnotation(id),
+          onCreateEditFromSelection: (state, dispatch, view) => createEditFromSelection(state, dispatch, view, {
+            onCreated: (annotation) => {
+              this.activeId = annotation.id;
+              this.pendingFocusCommentId = annotation.id;
+            },
+            onBlocked: (message, existingId) => {
+              if (existingId !== undefined) {
+                this.activeId = existingId;
+              }
+
+              this.onInfo(message);
+            },
+          }),
+          onClearActive: (view) => {
+            this.activeId = undefined;
+            view.dispatch(setActiveAnnotation(view.state.tr, undefined));
+            return true;
+          },
+        }),
       });
 
       if (this.view) {
@@ -84,7 +117,7 @@ export class EditorController {
     }
 
     const cleanMarkdown = serializeDocumentToMarkdown(this.view.state.doc);
-    const annotations = getAnnotations(this.view.state).map((annotation) => this.refreshAnnotationText(annotation));
+    const annotations = this.annotations.map((annotation) => this.refreshAnnotationText(annotation));
     return serializeMarkdownWithTags(cleanMarkdown, annotations);
   }
 
@@ -97,28 +130,75 @@ export class EditorController {
       return;
     }
 
+    const annotationMeta = getAnnotationMeta(transaction);
     const nextState = this.view.state.apply(transaction);
     this.view.updateState(nextState);
     this.annotations = getAnnotations(nextState);
 
-    if (transaction.docChanged) {
+    if (annotationMeta?.type === 'activate') {
+      this.activeId = annotationMeta.id;
+    }
+
+    if (annotationMeta?.type === 'setAnnotations') {
+      this.activeId = annotationMeta.activeId ?? this.activeId;
+    }
+
+    const annotationSetChanged = annotationMeta?.type === 'setAnnotations';
+
+    if (transaction.docChanged || (annotationSetChanged && annotationMeta.markDirty === true)) {
       this.setDirty(true);
-      this.renderReviewPanel();
+    }
+
+    if (transaction.docChanged || (annotationMeta && (!annotationSetChanged || annotationMeta.shouldRender !== false))) {
+      this.renderReviewPanel(this.pendingFocusCommentId);
+      this.pendingFocusCommentId = undefined;
     }
   }
 
-  private selectAnnotation(id: number): void {
+  private selectAnnotation(id: number, focusEditor = true): void {
+    if (this.activeId === id && !focusEditor) {
+      return;
+    }
+
     this.activeId = id;
+    let dispatchedActivation = false;
 
     if (this.view) {
       const annotation = getAnnotations(this.view.state).find((item) => item.id === id);
       if (annotation?.from !== undefined && annotation.to !== undefined) {
+        if (!focusEditor) {
+          this.pendingFocusCommentId = id;
+        }
+
         activateAnnotation(this.view, id);
-        this.view.focus();
+        if (focusEditor) {
+          this.view.focus();
+        }
+
+        dispatchedActivation = true;
       }
     }
 
-    this.renderReviewPanel();
+    if (!dispatchedActivation) {
+      this.renderReviewPanel();
+    }
+  }
+
+  private updateAnnotationComment(id: number, comment: string): void {
+    if (!this.view) {
+      return;
+    }
+
+    const annotations = this.annotations.map((annotation) => annotation.id === id
+      ? { ...annotation, comment }
+      : annotation);
+
+    this.annotations = annotations;
+    this.view.dispatch(replaceAnnotations(this.view.state.tr, annotations, {
+      activeId: this.activeId,
+      shouldRender: false,
+      markDirty: true,
+    }));
   }
 
   private refreshAnnotationText(annotation: EditAnnotation): EditAnnotation & { currentFragmentText?: string } {
@@ -141,12 +221,15 @@ export class EditorController {
     this.onDirtyChanged(nextValue);
   }
 
-  private renderReviewPanel(): void {
+  private renderReviewPanel(focusCommentId?: number): void {
     renderReviewPanel(this.reviewHost, {
       annotations: this.annotations,
       diagnostics: this.diagnostics,
       activeId: this.activeId,
+      focusCommentId,
       onSelect: (id) => this.selectAnnotation(id),
+      onCommentFocus: (id) => this.selectAnnotation(id, false),
+      onCommentChange: (id, comment) => this.updateAnnotationComment(id, comment),
     });
   }
 }

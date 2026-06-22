@@ -58,6 +58,7 @@ const controller = new EditorController({
     showNotification(notification, message, 'error');
     postEditorMessage({ type: 'editor.error', message });
   },
+  onInfo: (message) => showNotification(notification, message, 'info'),
 });
 
 function updateDocumentInfo(): void {
