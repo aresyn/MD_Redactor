@@ -77,7 +77,7 @@ if (Test-Path -LiteralPath $publishPath) {
 dotnet publish $appProjectPath `
     --configuration $Configuration `
     --runtime $Runtime `
-    --self-contained false `
+    --self-contained true `
     --output $publishPath `
     -p:PublishSingleFile=false
 Assert-NativeSuccess -Step "dotnet publish"

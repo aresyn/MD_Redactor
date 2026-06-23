@@ -9,7 +9,7 @@ MD Redactor — нативный Windows-редактор Markdown-файлов 
 - WPF/.NET 10 приложение для Windows 10+.
 - WebView2 WYSIWYG-редактор на TypeScript, Vite и ProseMirror.
 - Светлая, темная и системная тема.
-- Открытие `.md` через кнопку, `Ctrl+O` или drag-and-drop на окно.
+- Открытие `.md` через кнопку, `Ctrl+O`, drag-and-drop на окно или Windows `Открыть с помощью...`.
 - Создание правки: выделить текст и нажать `Enter`.
 - Правая панель `Правки`: список, активная правка, комментарии, переход к фрагменту, удаление правки.
 - Безопасное сохранение: валидация тегов, атомарная запись, `.bak` перед первой записью в сессии.
@@ -111,7 +111,31 @@ dotnet run --project .\src\MDRedactor.App\MDRedactor.App.csproj
 .\scripts\package.ps1
 ```
 
-Скрипт запускает bootstrap, собирает web/editor, прогоняет тесты, выполняет `dotnet publish` для `win-x64` и кладет release-сборку в `artifacts\publish\win-x64`. Web assets копируются в publish output в `web\editor\dist`.
+Скрипт запускает bootstrap, собирает web/editor, прогоняет тесты, выполняет self-contained `dotnet publish` для `win-x64` и кладет release-сборку в `artifacts\publish\win-x64`. Web assets копируются в publish output в `web\editor\dist`.
+
+## Инсталлятор
+
+```powershell
+.\scripts\installer.ps1
+```
+
+Скрипт проверяет окружение, при необходимости устанавливает Inno Setup через `winget`, запускает `.\scripts\package.ps1` и собирает установщик:
+
+```text
+artifacts\installer\MDRedactorSetup-x64.exe
+```
+
+Инсталлятор ставит приложение для текущего пользователя без прав администратора в:
+
+```text
+%LOCALAPPDATA%\Programs\MD Redactor
+```
+
+Во время установки создаются ярлыки `MD Redactor` на рабочем столе и в меню Пуск. Также приложение регистрируется в HKCU для Windows `Открыть с помощью...` у `.md` файлов. MD Redactor не назначается редактором Markdown по умолчанию автоматически и не меняет существующие пользовательские ассоциации.
+
+После выбора MD Redactor в `Открыть с помощью...` Windows запускает приложение с путем к файлу, а редактор открывает этот Markdown сразу после готовности WebView2. Если файл отсутствует или не читается, пользователь увидит русское сообщение об ошибке.
+
+Release-сборка включает .NET runtime для Windows x64. Инсталлятор не встраивает WebView2 Runtime. Проверка и установка WebView2 Runtime выполняется `scripts\bootstrap.ps1`; на целевом ПК WebView2 Runtime должен быть установлен.
 
 ## Sample
 

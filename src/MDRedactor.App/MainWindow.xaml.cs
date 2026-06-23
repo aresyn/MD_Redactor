@@ -29,11 +29,14 @@ public partial class MainWindow : Window
     private bool _editorReady;
     private bool _isSaving;
     private bool _allowClose;
+    private string? _pendingStartupFilePath;
+    private bool _isOpeningStartupFile;
 
     public MainWindow()
     {
         InitializeComponent();
 
+        _pendingStartupFilePath = GetStartupFilePathFromArguments();
         _themePreference = AppSettingsStore.Load().Theme;
         ApplyTheme(_themePreference, saveSettings: false);
         SelectTheme(_themePreference);
@@ -88,11 +91,15 @@ public partial class MainWindow : Window
 
         try
         {
-            await EditorWebView.EnsureCoreWebView2Async();
+            var webViewUserDataFolder = GetWebView2UserDataFolder();
+            Directory.CreateDirectory(webViewUserDataFolder);
+            var webViewEnvironment = await CoreWebView2Environment.CreateAsync(userDataFolder: webViewUserDataFolder);
+
+            await EditorWebView.EnsureCoreWebView2Async(webViewEnvironment);
             EditorWebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             EditorWebView.Source = new Uri(indexPath);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or COMException or WebView2RuntimeNotFoundException)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or COMException or WebView2RuntimeNotFoundException)
         {
             AppLogger.LogError(ex, "Ошибка запуска WebView2");
             ShowStartupError($"Не удалось запустить WebView2. Установите WebView2 Runtime и повторите запуск.\n\n{ex.Message}");
@@ -146,6 +153,37 @@ public partial class MainWindow : Window
             AppLogger.LogError(ex, "Ошибка открытия Markdown-файла", filePath);
             _viewModel.StatusText = "Ошибка открытия";
             ShowMessage("Ошибка открытия", $"Не удалось открыть файл.\n\n{ex.Message}");
+        }
+    }
+
+    private async Task OpenStartupDocumentAsync()
+    {
+        if (_isOpeningStartupFile || _pendingStartupFilePath is null)
+        {
+            return;
+        }
+
+        var filePath = _pendingStartupFilePath;
+        _pendingStartupFilePath = null;
+        _isOpeningStartupFile = true;
+
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                AppLogger.LogWarning("Файл запуска не найден.", filePath);
+                _viewModel.StatusText = "Ошибка открытия";
+                ShowMessage(
+                    "Ошибка открытия",
+                    $"Не удалось открыть файл, переданный при запуске.\n\nФайл не найден:\n{filePath}");
+                return;
+            }
+
+            await OpenDocumentAsync(filePath);
+        }
+        finally
+        {
+            _isOpeningStartupFile = false;
         }
     }
 
@@ -281,7 +319,11 @@ public partial class MainWindow : Window
                 case "editor.ready":
                     _editorReady = true;
                     SendThemeToEditor();
-                    if (_currentDocument is not null)
+                    if (_pendingStartupFilePath is not null)
+                    {
+                        _ = OpenStartupDocumentAsync();
+                    }
+                    else if (_currentDocument is not null)
                     {
                         SendDocumentToEditor(_currentDocument);
                     }
@@ -473,6 +515,27 @@ public partial class MainWindow : Window
         var files = e.Data.GetData(DataFormats.FileDrop) as string[];
         return files?
             .FirstOrDefault(file => string.Equals(Path.GetExtension(file), ".md", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? GetStartupFilePathFromArguments()
+    {
+        var filePath = Environment.GetCommandLineArgs()
+            .Skip(1)
+            .FirstOrDefault(argument => !string.IsNullOrWhiteSpace(argument));
+
+        if (filePath is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(filePath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or SecurityException)
+        {
+            return filePath;
+        }
     }
 
     private async Task<bool> ConfirmUnsavedChangesAsync()
@@ -716,6 +779,14 @@ public partial class MainWindow : Window
         }
 
         return Path.Combine(Directory.GetCurrentDirectory(), "web", "editor", "dist", "index.html");
+    }
+
+    private static string GetWebView2UserDataFolder()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MDRedactor",
+            "WebView2");
     }
 }
 
