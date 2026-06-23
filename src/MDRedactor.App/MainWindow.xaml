@@ -232,24 +232,41 @@
 
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                        <TextBlock Text="Тема"
+                        <TextBlock x:Name="ThemeLabel"
+                                   Text="Theme"
                                    FontSize="12"
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource MutedTextBrush}" />
                         <ComboBox x:Name="ThemeSelector"
                                   SelectionChanged="OnThemeSelectionChanged"
-                                  ToolTip="Выбор темы интерфейса">
-                            <ComboBoxItem Content="Системная" Tag="System" />
-                            <ComboBoxItem Content="Светлая" Tag="Light" />
-                            <ComboBoxItem Content="Темная" Tag="Dark" />
+                                  ToolTip="Choose interface theme">
+                            <ComboBoxItem Content="System" Tag="System" />
+                            <ComboBoxItem Content="Light" Tag="Light" />
+                            <ComboBoxItem Content="Dark" Tag="Dark" />
                         </ComboBox>
                     </StackPanel>
-                    <Button Content="Открыть"
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <TextBlock x:Name="LanguageLabel"
+                                   Text="Language"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource MutedTextBrush}" />
+                        <ComboBox x:Name="LanguageSelector"
+                                  SelectionChanged="OnLanguageSelectionChanged"
+                                  ToolTip="Choose interface language">
+                            <ComboBoxItem Content="System" Tag="System" />
+                            <ComboBoxItem Content="Russian" Tag="Russian" />
+                            <ComboBoxItem Content="English" Tag="English" />
+                        </ComboBox>
+                    </StackPanel>
+                    <Button x:Name="OpenButton"
+                            Content="Open"
                             Command="{Binding OpenCommand}"
-                            ToolTip="Открыть Markdown-файл (Ctrl+O)" />
-                    <Button Content="Сохранить"
+                            ToolTip="Open a Markdown file (Ctrl+O)" />
+                    <Button x:Name="SaveButton"
+                            Content="Save"
                             Command="{Binding SaveCommand}"
-                            ToolTip="Сохранить текущий Markdown-файл (Ctrl+S)" />
+                            ToolTip="Save the current Markdown file (Ctrl+S)" />
                 </StackPanel>
             </DockPanel>
         </Border>

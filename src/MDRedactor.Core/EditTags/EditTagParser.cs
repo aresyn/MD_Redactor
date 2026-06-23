@@ -63,7 +63,14 @@ public sealed class EditTagParser
             if (token.Kind == EditTagKind.Unknown)
             {
                 stripped.Append(markdown, token.StartIndex, token.EndIndex - token.StartIndex);
-                AddDiagnostic(diagnostics, markdown, EditDiagnosticSeverity.Error, token.StartIndex, token.Id, "Неизвестный служебный маркер правки.");
+                AddDiagnostic(
+                    diagnostics,
+                    markdown,
+                    EditDiagnosticSeverity.Error,
+                    EditDiagnosticCodes.UnknownMarker,
+                    token.StartIndex,
+                    token.Id,
+                    "Неизвестный служебный маркер правки.");
                 position = token.EndIndex;
                 continue;
             }
@@ -79,6 +86,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.NestedEdit,
                             token.StartIndex,
                             token.Id,
                             "Вложенные правки запрещены: найден ed-start внутри незакрытой правки.");
@@ -92,6 +100,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.DuplicateId,
                             token.StartIndex,
                             token.Id,
                             $"Дублирующийся id правки {token.Id.Value} запрещен.");
@@ -111,6 +120,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.CommentWithoutStart,
                             token.StartIndex,
                             token.Id,
                             "Маркер ed-comm найден без открывающего ed-start.");
@@ -123,6 +133,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.CommentIdMismatch,
                             token.StartIndex,
                             token.Id,
                             $"Id в ed-comm ({FormatId(token.Id)}) не совпадает с id ed-start ({current.Id}).");
@@ -135,6 +146,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.DuplicateComment,
                             token.StartIndex,
                             token.Id,
                             $"Для правки id {current.Id} найден повторный ed-comm.");
@@ -153,6 +165,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.UnsafeComment,
                             token.CommentStartIndex,
                             current.Id,
                             "Комментарий правки содержит запрещенную для HTML-comment последовательность \"--\".");
@@ -168,6 +181,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.EndWithoutStart,
                             token.StartIndex,
                             token.Id,
                             "Маркер ed-end найден без открывающего ed-start.");
@@ -180,6 +194,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.MissingCommentBeforeEnd,
                             token.StartIndex,
                             current.Id,
                             $"Правка id {current.Id} закрыта без обязательного ed-comm.");
@@ -192,6 +207,7 @@ public sealed class EditTagParser
                             diagnostics,
                             markdown,
                             EditDiagnosticSeverity.Error,
+                            EditDiagnosticCodes.EndIdMismatch,
                             token.StartIndex,
                             token.Id,
                             $"Id в ed-end ({FormatId(token.Id)}) не совпадает с id ed-start ({current.Id}).");
@@ -243,6 +259,7 @@ public sealed class EditTagParser
                     diagnostics,
                     markdown,
                     EditDiagnosticSeverity.Error,
+                    EditDiagnosticCodes.MissingComment,
                     current.RawStartIndex,
                     current.Id,
                     $"Правка id {current.Id} не содержит обязательный ed-comm.");
@@ -252,6 +269,7 @@ public sealed class EditTagParser
                 diagnostics,
                 markdown,
                 EditDiagnosticSeverity.Error,
+                EditDiagnosticCodes.MissingEnd,
                 current.RawStartIndex,
                 current.Id,
                 $"Правка id {current.Id} не содержит закрывающий ed-end.");
@@ -378,6 +396,7 @@ public sealed class EditTagParser
                 diagnostics,
                 markdown,
                 EditDiagnosticSeverity.Error,
+                EditDiagnosticCodes.StatusAttribute,
                 token.StartIndex,
                 token.Id,
                 "Формат правок не поддерживает атрибут status.");
@@ -389,6 +408,7 @@ public sealed class EditTagParser
                 diagnostics,
                 markdown,
                 EditDiagnosticSeverity.Error,
+                EditDiagnosticCodes.MissingId,
                 token.StartIndex,
                 null,
                 "Маркер правки должен содержать id в формате id=\"N\".");
@@ -399,6 +419,7 @@ public sealed class EditTagParser
                 diagnostics,
                 markdown,
                 EditDiagnosticSeverity.Error,
+                EditDiagnosticCodes.InvalidId,
                 token.StartIndex,
                 token.Id,
                 "Id правки должен быть положительным целым числом.");
@@ -409,6 +430,7 @@ public sealed class EditTagParser
         List<EditDiagnostic> diagnostics,
         string markdown,
         EditDiagnosticSeverity severity,
+        string code,
         int rawIndex,
         int? editId,
         string message)
@@ -417,6 +439,7 @@ public sealed class EditTagParser
         diagnostics.Add(new EditDiagnostic
         {
             Severity = severity,
+            Code = code,
             Message = message,
             RawIndex = rawIndex,
             Line = line,
@@ -541,4 +564,3 @@ internal enum EditTagKind
     Comment,
     End
 }
-

@@ -16,6 +16,7 @@ import { createEditorPlugins, parseMarkdownToDoc } from './prosemirrorSetup';
 import { sortAnnotationsForPanel } from './reviewModel';
 import type { EditAnnotation, EditDiagnostic, LoadedDocument } from './types';
 import { renderReviewPanel } from '../ui/reviewPanel';
+import { setLanguage, t } from '../i18n';
 
 export type EditorControllerOptions = {
   editorHost: HTMLElement;
@@ -89,7 +90,7 @@ export class EditorController {
           state,
           dispatchTransaction: (transaction) => this.dispatchTransaction(transaction),
           attributes: {
-            'aria-label': 'Редактор Markdown',
+            'aria-label': t('editor.aria'),
           },
         });
       }
@@ -104,7 +105,7 @@ export class EditorController {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.onError(`Не удалось отобразить Markdown: ${message}`);
+      this.onError(t('editor.renderError', { message }));
     }
   }
 
@@ -124,6 +125,23 @@ export class EditorController {
 
   public setTheme(theme: string): void {
     this.editorHost.dataset.theme = theme || 'light';
+  }
+
+  public setLanguage(language: string): void {
+    setLanguage(language);
+    if (this.view) {
+      this.view.setProps({
+        attributes: {
+          'aria-label': t('editor.aria'),
+        },
+      });
+      this.view.dispatch(replaceAnnotations(this.view.state.tr, this.annotations, {
+        activeId: this.activeId ?? null,
+        shouldRender: false,
+      }));
+    }
+
+    this.renderReviewPanel();
   }
 
   private dispatchTransaction(transaction: Parameters<EditorView['dispatch']>[0]): void {
@@ -196,7 +214,7 @@ export class EditorController {
       return;
     }
 
-    const confirmed = window.confirm(`Удалить правку #${id}? Сам текст фрагмента останется в документе.`);
+    const confirmed = window.confirm(t('editor.deleteConfirm', { id }));
     if (!confirmed) {
       return;
     }
@@ -210,7 +228,7 @@ export class EditorController {
       markDirty: true,
     }));
 
-    this.onInfo(`Правка #${id} удалена. Текст фрагмента остался в документе.`);
+    this.onInfo(t('editor.deleteDone', { id }));
   }
 
   private updateAnnotationComment(id: number, comment: string): void {
@@ -274,7 +292,7 @@ export class EditorController {
       onDelete: (id) => this.deleteAnnotation(id),
       onCommentFocus: (id) => this.selectAnnotation(id, false),
       onCommentChange: (id, comment) => this.updateAnnotationComment(id, comment),
-      onUnsafeComment: () => this.onInfo('Последовательность -- в комментарии заменена на - -, чтобы сохранить корректный HTML-comment.'),
+      onUnsafeComment: () => this.onInfo(t('editor.unsafeComment')),
     });
   }
 }

@@ -1,5 +1,6 @@
 import type { EditAnnotation, EditDiagnostic } from '../editor/types';
 import { buildFragmentPreview, sanitizeCommentForHtmlComment, sortAnnotationsForPanel } from '../editor/reviewModel';
+import { formatEditCount, localizeDiagnostic, t } from '../i18n';
 
 export type ReviewPanelOptions = {
   annotations: EditAnnotation[];
@@ -21,7 +22,7 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
   header.className = 'review-header';
 
   const title = document.createElement('h2');
-  title.textContent = 'Правки';
+  title.textContent = t('review.title');
 
   const count = document.createElement('span');
   count.className = 'review-count';
@@ -38,8 +39,8 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
       const item = document.createElement('div');
       item.className = diagnostic.severity === 'error' ? 'diagnostic diagnostic-error' : 'diagnostic diagnostic-warning';
       item.textContent = diagnostic.editId === undefined
-        ? diagnostic.message
-        : `#${diagnostic.editId}: ${diagnostic.message}`;
+        ? localizeDiagnostic(diagnostic)
+        : `#${diagnostic.editId}: ${localizeDiagnostic(diagnostic)}`;
       diagnostics.append(item);
     }
 
@@ -50,9 +51,9 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     const empty = document.createElement('div');
     empty.className = 'review-empty';
     const emptyTitle = document.createElement('p');
-    emptyTitle.textContent = 'В этом файле пока нет правок';
+    emptyTitle.textContent = t('review.emptyTitle');
     const emptyHint = document.createElement('span');
-    emptyHint.textContent = 'Выделите фрагмент текста и нажмите Enter';
+    emptyHint.textContent = t('review.emptyHint');
     empty.append(emptyTitle, emptyHint);
     container.append(empty);
     return;
@@ -91,7 +92,7 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     id.textContent = `#${annotation.id}`;
 
     const kind = document.createElement('span');
-    kind.textContent = annotation.kind === 'inline' ? 'в строке' : 'блок';
+    kind.textContent = annotation.kind === 'inline' ? t('review.kindInline') : t('review.kindBlock');
 
     cardHeader.append(id, kind);
 
@@ -102,12 +103,12 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     const comment = document.createElement('textarea');
     comment.className = 'review-comment';
     comment.value = annotation.comment;
-    comment.placeholder = 'Что нужно исправить?';
-    comment.setAttribute('aria-label', `Комментарий к правке #${annotation.id}`);
+    comment.placeholder = t('review.commentPlaceholder');
+    comment.setAttribute('aria-label', t('review.commentAria', { id: annotation.id }));
 
     const emptyComment = document.createElement('div');
     emptyComment.className = 'review-warning';
-    emptyComment.textContent = 'Комментарий не заполнен';
+    emptyComment.textContent = t('review.emptyComment');
     emptyComment.hidden = annotation.comment.trim().length > 0;
 
     comment.addEventListener('focus', () => options.onCommentFocus(annotation.id));
@@ -130,7 +131,7 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     const goToButton = document.createElement('button');
     goToButton.type = 'button';
     goToButton.className = 'review-action-button';
-    goToButton.textContent = 'Перейти';
+    goToButton.textContent = t('review.goTo');
     goToButton.addEventListener('click', (event) => {
       event.stopPropagation();
       options.onGoTo(annotation.id);
@@ -139,7 +140,7 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'review-action-button review-action-button-danger';
-    deleteButton.textContent = 'Удалить';
+    deleteButton.textContent = t('review.delete');
     deleteButton.addEventListener('click', (event) => {
       event.stopPropagation();
       options.onDelete(annotation.id);
@@ -153,7 +154,9 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
     if (annotation.warning) {
       const warning = document.createElement('div');
       warning.className = 'review-warning';
-      warning.textContent = annotation.warning;
+      warning.textContent = annotation.warningCode
+        ? t(annotation.warningCode, { id: annotation.id })
+        : annotation.warning;
       card.append(warning);
     }
 
@@ -172,19 +175,4 @@ export function renderReviewPanel(container: HTMLElement, options: ReviewPanelOp
       commentToFocus?.select();
     });
   }
-}
-
-function formatEditCount(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-
-  if (mod10 === 1 && mod100 !== 11) {
-    return `${count} правка`;
-  }
-
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-    return `${count} правки`;
-  }
-
-  return `${count} правок`;
 }

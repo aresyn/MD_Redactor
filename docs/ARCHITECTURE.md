@@ -1,145 +1,176 @@
-# Архитектура
+# Architecture
 
-## WPF-приложение
+## WPF host application
 
-`src/MDRedactor.App` — нативный Windows shell на WPF и .NET 10. Главное окно содержит верхнюю панель с командами `Открыть` и `Сохранить`, индикатор состояния и WebView2, который загружает собранный `web/editor/dist/index.html`.
+`src/MDRedactor.App` is the native Windows shell built with WPF and .NET 10. The main window contains a compact top bar, theme and language selectors, Open and Save commands, a status line, and WebView2.
 
-Если web-редактор не собран, приложение показывает русское диагностическое сообщение вместо аварийного завершения.
+The app loads the built web editor from `web/editor/dist/index.html`. WebView2 uses a virtual host mapping for the `dist` folder, so Vite assets are loaded from stable relative paths. If the web editor has not been built, the app shows a localized startup error instead of crashing.
 
-Окно использует стандартную системную рамку Windows, поэтому minimize, maximize, close и resize остаются штатными. Внутри окна WPF применяет минималистичную светлую или темную палитру через ресурсы `Window.Resources`.
+The window keeps the standard Windows frame. Minimize, maximize, close, and resize are handled by the operating system.
 
-Тема выбирается в верхней панели: `Системная`, `Светлая`, `Темная`. Настройка хранится в `%LOCALAPPDATA%\MDRedactor\settings.json`; это настройка приложения и не является хранилищем правок. Профиль WebView2 хранится в `%LOCALAPPDATA%\MDRedactor\WebView2`, чтобы uninstall мог удалить папку установки без пользовательского кеша. WPF разрешает системную тему в фактическое значение `light` или `dark` и отправляет его в web/editor через `host.setTheme`.
+Theme preferences are `System`, `Light`, and `Dark`. Language preferences are `System`, `Russian`, and `English`. Both settings are stored in:
 
-Файл можно открыть через кнопку `Открыть`, `Ctrl+O` или drag-and-drop `.md` файла на окно. Перед открытием другого файла WPF проверяет dirty-состояние и при необходимости показывает подтверждение сохранения.
+```text
+%LOCALAPPDATA%\MDRedactor\settings.json
+```
 
-При запуске с аргументом командной строки WPF воспринимает первый непустой аргумент как путь к Markdown-файлу. Это используется Windows-сценарием `Открыть с помощью...`: приложение сохраняет путь как pending startup file, дожидается `editor.ready` от WebView2 и затем открывает документ через общий `MarkdownFileService`. Если файл отсутствует или не читается, пользователь получает русскую ошибку, а приложение не завершается аварийно.
+This file stores application preferences only. It is not used to store edits. WPF resolves system theme and system language to effective values, then sends them to the web editor through `host.setTheme` and `host.setLanguage`.
 
-Перед сохранением WPF получает Markdown из WebView2, запускает `EditTagValidator` и записывает файл только если нет ошибок уровня `Error`. При ошибках разметки статус становится `Ошибка разметки правок`, пользователю показывается список русских диагностических сообщений со строкой и колонкой, исходный файл не меняется.
+Files can be opened with the Open button, `Ctrl+O`, drag-and-drop, command-line arguments, or Windows "Open with...". Startup arguments are treated as pending file paths. The app waits for `editor.ready`, then opens the document through `MarkdownFileService`.
 
-Сохранение идет через `MarkdownFileService.SaveAtomicAsync`:
+Before saving, WPF asks the web editor for the current Markdown, validates edit tags with `EditTagValidator`, and writes the file only when there are no `Error` diagnostics. Diagnostics have stable codes and Russian fallback messages. The WPF localizer uses those codes to show errors in the selected interface language.
 
-1. Markdown кодируется в исходной кодировке открытого файла.
-2. Временный файл пишется рядом с исходным как `имя.md.tmp`.
-3. Перед первой записью этого файла в рамках WPF-сессии создается `имя.md.bak`.
-4. Исходный файл атомарно заменяется временным файлом.
-5. После успеха tmp отсутствует, а `LastWriteTimeUtc` в `MarkdownDocument` обновляется.
+Saving uses `MarkdownFileService.SaveAtomicAsync`:
 
-Если запись временного файла, backup или замена завершаются ошибкой, исходный файл остается нетронутым, tmp удаляется по возможности, статус становится `Ошибка сохранения`.
+1. The Markdown is encoded with the original file encoding when possible.
+2. A temporary `filename.md.tmp` file is written next to the source file.
+3. A `filename.md.bak` backup is created before the first save in the current WPF session.
+4. The source file is replaced by the temporary file.
+5. The temporary file is removed after success and `LastWriteTimeUtc` is updated.
 
-Перед записью WPF сравнивает сохраненный `LastWriteTimeUtc` с текущим временем файла на диске. Если файл изменился другой программой, пользователь видит предупреждение `Файл был изменен другой программой. Перезаписать его?` и может отменить сохранение.
+If temporary write, backup creation, or replacement fails, the original file is left untouched where possible. The app logs read, save, and WebView2 protocol errors to:
 
-При закрытии окна или открытии другого файла с несохраненными изменениями WPF показывает русское подтверждение с кнопками `Сохранить`, `Не сохранять`, `Отмена`. Если несохраненных изменений нет, окно закрывается без подтверждения.
+```text
+%LOCALAPPDATA%\MDRedactor\logs
+```
 
-Ошибки чтения, сохранения и протокола WebView2 пишутся в `%LOCALAPPDATA%\MDRedactor\logs`. В лог попадают exception, контекст и путь файла; текст документа не логируется.
+The document text is not logged.
 
 ## Core library
 
-`src/MDRedactor.Core` содержит модели и сервисы для работы с Markdown-файлами. `MarkdownFileService` читает UTF-8 с BOM, UTF-8 без BOM, UTF-16 LE/BE по BOM и Windows-1251 как fallback, а при сохранении использует кодировку, определенную при открытии файла. Для новых документов используется UTF-8 без BOM.
+`src/MDRedactor.Core` contains Markdown file I/O and edit tag services.
 
-`MarkdownDocument` хранит текст документа, путь, имя кодировки, признак BOM, тип переводов строк, диагностику определения кодировки и `LastWriteTimeUtc`, полученный при открытии или успешном сохранении.
+`MarkdownFileService` reads:
 
-`EditTagParser`, `EditTagValidator` и `EditTagSerializer` отвечают за короткий формат правок внутри Markdown.
+- UTF-8 with BOM;
+- UTF-8 without BOM;
+- UTF-16 LE/BE by BOM;
+- Windows-1251 fallback when the file is not valid UTF-8.
 
-Блочная правка:
+When saving an opened document, the service keeps the detected encoding where possible. New documents use UTF-8 without BOM.
+
+`MarkdownDocument` stores Markdown text, file path, encoding name, BOM flag, newline kind, encoding diagnostics, backup state, and the last write time observed on disk.
+
+`EditTagParser`, `EditTagValidator`, and `EditTagSerializer` implement the short edit format.
+
+Block edit:
 
 ```markdown
 <!-- ed-start id="1" -->
-Фрагмент текста, который нужно доработать.
-Может быть несколько строк.
+Fragment text.
 <!-- ed-comm id="1"
-Комментарий пользователя к этой правке.
-Может быть несколько строк.
+Reviewer comment.
 -->
 <!-- ed-end id="1" -->
 ```
 
-Inline-правка:
+Inline edit:
 
 ```markdown
-Текст до <!-- ed-start id="2" -->короткий фрагмент<!-- ed-comm id="2"
-Комментарий к короткому фрагменту.
---><!-- ed-end id="2" --> текст после.
+Text before <!-- ed-start id="2" -->fragment<!-- ed-comm id="2"
+Reviewer comment.
+--><!-- ed-end id="2" --> text after.
 ```
 
-`ed-start` открывает правку, `ed-comm` отделяет фрагмент от комментария, `ed-end` закрывает правку. Комментарий хранится внутри HTML-comment-блока `ed-comm`: после первой строки `<!-- ed-comm id="N"` и до закрывающего `-->`.
+`ed-start` opens an edit, `ed-comm` separates the fragment from the comment, and `ed-end` closes the edit. The comment is stored inside the `ed-comm` HTML comment block, after the first line and before the closing `-->`.
 
-Все три маркера одной правки должны иметь одинаковый положительный `id`. Id не обязаны идти подряд. При удалении правки остальные id не перенумеровываются, а новая правка получает `max(existing id) + 1`. Вложенные, пересекающиеся и дублирующиеся правки запрещены.
+All three markers of one edit must use the same positive `id`. Ids do not need to be continuous. Deleting an edit never renumbers other ids. A new edit receives `max(existing id) + 1`.
 
-Правки не имеют статусов. Атрибуты `status`, `resolved`, `open` и похожие состояния не входят в формат.
+Nested, overlapping, and duplicate edits are invalid. Edits have no status. Attributes such as `status`, `resolved`, and `open` are not part of the format.
 
-## WebView2 editor
+## WebView2 protocol
 
-WebView2 используется как граница между нативным host-приложением и web-интерфейсом редактора. Обмен идет через `postMessage`.
+WebView2 is the boundary between the native host and the web editor. Messages are passed with `postMessage`.
 
-Сообщения из web в host:
+Messages from web to host:
 
 - `editor.ready`
 - `editor.dirtyChanged`
 - `editor.saveRequested`
 - `editor.error`
 
-Сообщения из host в web:
+Messages from host to web:
 
 - `host.loadDocument`
 - `host.requestMarkdown`
-- `host.setTheme` (`light` или `dark`)
+- `host.setTheme` with `light` or `dark`
+- `host.setLanguage` with `ru` or `en`
 
-## web/editor
+## Web editor
 
-`web/editor` — Vite + TypeScript проект на ProseMirror. Web-часть получает Markdown от WPF, разбирает короткие теги правок, скрывает служебную разметку из основного документа и передает чистый Markdown в ProseMirror.
+`web/editor` is a Vite + TypeScript project built on ProseMirror. It receives Markdown from WPF, parses short edit tags, hides service markup from the main document, and renders the clean Markdown as formatted text.
 
-ProseMirror отображает Markdown как форматированный документ: заголовки, абзацы, жирный и курсивный текст, списки, цитаты, hard break и horizontal rule. Markdown-маркеры `#`, `**`, `_` не показываются пользователю в основном режиме редактирования.
+The editor supports paragraphs, headings, bold and italic text, ordered and unordered lists, blockquotes, hard breaks, and horizontal rules. Markdown markers such as `#`, `**`, and `_` are not shown in the main editing view.
 
-Web-side parser повторяет короткий формат Core на уровне открытия документа:
+The web-side parser mirrors the Core short tag format for display:
 
-- удаляет `ed-start`, `ed-comm`, `ed-end` из видимого Markdown;
-- удаляет комментарии из основного текста;
-- строит список правок для правой панели;
-- пытается сопоставить фрагменты с ProseMirror-документом по видимому тексту в порядке id;
-- показывает русские диагностические сообщения, если разметка повреждена или диапазон нельзя надежно сопоставить.
+- removes `ed-start`, `ed-comm`, and `ed-end` from visible Markdown;
+- removes comments from the main text;
+- builds the review panel model;
+- maps edit fragments to ProseMirror document positions by visible text;
+- produces localized diagnostics for damaged markup or unmapped ranges.
 
-C# Core остается источником строгой валидации и надежной обработки формата. Web-часть нужна для отображения, подсветки и сохранения текущего WYSIWYG-документа обратно в Markdown с короткими тегами.
+Core remains the strict source of validation before save. The web parser exists to keep the editor responsive and to preserve edit data while the user works.
 
-При сохранении web-редактор выполняет каноническую Markdown-сериализацию ProseMirror-документа и повторно вставляет короткие теги вокруг сопоставленных диапазонов. Id существующих правок не меняются. Если диапазон правки не удалось сопоставить, исходный tagged-фрагмент сохраняется отдельно в Markdown, чтобы не потерять комментарий и id.
+When saving, the web editor serializes the ProseMirror document to canonical Markdown and inserts short edit tags around mapped ranges. Existing ids are not changed. If an edit cannot be mapped reliably, the original tagged fragment is preserved separately during serialization so its id and comment are not lost.
 
-Создание новой правки выполняется в web-редакторе командой `Enter` при непустом выделении в ProseMirror. Новая правка получает `max(existing id) + 1`; существующие id не перенумеровываются. Команда запрещает вложенные и пересекающиеся правки: если выделение попадает внутрь или пересекает уже подсвеченный диапазон, новая правка не создается, а существующая правка активируется.
+New edits are created by pressing `Enter` with a non-empty ProseMirror selection. The command rejects nested and overlapping edits. Inline edits are created for selections within one text block. Block edits are created when the selection covers one or more top-level blocks completely. Partial selections across multiple paragraphs are rejected with a localized message.
 
-Inline-правка создается, если выделение находится в пределах одного текстового блока. Блочная правка создается, если выделение охватывает один или несколько top-level блоков целиком. Если пользователь выделяет части нескольких абзацев, web-редактор показывает сообщение `Выделение через несколько абзацев должно охватывать абзацы целиком` и не создает правку.
+The review panel has no separate data source. It is built from Markdown edit tags and current ProseMirror ranges. Cards are sorted by document position, not by id. Sorting never renumbers ids.
 
-После создания правки правая панель получает новую карточку, а textarea комментария получает фокус. Пустой комментарий допустим и сохраняется в Markdown как пустой `ed-comm` блок.
+Deleting an edit removes only `ed-start`, `ed-comm`, `ed-end`, and the comment. The selected text remains in the document. Other ids are not changed.
 
-Правая панель `Правки` не имеет отдельного источника данных. Она строится только из списка правок, полученного из Markdown-тегов текущего документа, и из текущих диапазонов ProseMirror. Карточка связана с тегами одной правки по `id`: номер карточки соответствует `ed-start id`, `ed-comm id` и `ed-end id`, textarea редактирует содержимое `ed-comm`, а превью берется из видимого текста фрагмента без служебных тегов.
+HTML comments cannot contain `--` inside comment bodies. The web editor replaces `--` with `- -`; `-->` becomes `- ->`. The same normalization is applied before serialization.
 
-Карточки сортируются по позиции фрагмента в текущем документе. Если id идут как `1`, `5`, `2`, но правка `#2` находится раньше `#5`, в панели она показывается раньше. Сортировка не меняет id и не влияет на сериализацию номеров.
+The web UI uses CSS variables for light and dark themes. Language switching uses a small TypeScript dictionary and does not affect Markdown content.
 
-Удаление правки через панель удаляет только служебную разметку `ed-start`, `ed-comm`, `ed-end` и комментарий. Текст фрагмента остается в документе. Остальные id не перенумеровываются: после удаления `#2` из набора `#1`, `#2`, `#5` остаются `#1` и `#5`.
+## Build, package, and installer
 
-HTML comments не допускают последовательность `--` внутри тела комментария. Web-редактор при вводе комментария безопасно заменяет `--` на `- -`; последовательность `-->` становится `- ->`. Та же нормализация применяется при сериализации перед записью Markdown.
+`scripts/build.ps1` checks the environment, builds `web/editor`, runs web tests, then restores, builds, and tests the .NET solution.
 
-Web-часть использует CSS variables для темы. Переключение темы не меняет Markdown и не влияет на список правок.
+`scripts/package.ps1` runs the release pipeline for Windows x64: bootstrap, web build, web tests, .NET tests, self-contained `dotnet publish`, and copying `web/editor/dist` to:
 
-## Сборка и упаковка
+```text
+artifacts\publish\win-x64\web\editor\dist
+```
 
-`scripts/build.ps1` проверяет окружение, собирает `web/editor`, запускает web-тесты, затем выполняет restore/build/test для .NET solution.
+Folder publish is used because WebView2 assets must stay next to the executable. The .NET runtime is included in publish output. WebView2 Runtime remains an external system component.
 
-`scripts/package.ps1` выполняет release pipeline для Windows x64: bootstrap, `npm run build`, `npm test`, `dotnet test`, self-contained `dotnet publish` и копирование `web/editor/dist` в `artifacts/publish/win-x64/web/editor/dist`. Публикация использует folder publish, потому что приложению нужны WebView2 assets рядом с исполняемым файлом. .NET runtime входит в publish output; WebView2 Runtime остается внешним системным компонентом.
+`scripts/installer.ps1` builds the EXE installer on top of publish output:
 
-Диагностический пример находится в `samples/scene.ru.md`. Он содержит русскую прозу, Markdown-разметку, inline-правку и блочную правку с разреженными id.
+1. Run `scripts/bootstrap.ps1`.
+2. Check Inno Setup compiler `ISCC.exe`.
+3. Install `JRSoftware.InnoSetup` through `winget` when needed.
+4. Run `scripts/package.ps1`.
+5. Compile `installer/MDRedactor.iss`.
+6. Check `artifacts/installer/MDRedactorSetup-x64.exe`.
 
-`scripts/installer.ps1` строит EXE-инсталлятор поверх publish output. Pipeline:
+The Inno Setup installer supports English and Russian. It installs per-user without elevation to:
 
-1. Запускает `scripts/bootstrap.ps1`.
-2. Проверяет Inno Setup compiler `ISCC.exe`; если его нет, пробует установить `JRSoftware.InnoSetup` через `winget`.
-3. Запускает `scripts/package.ps1` для `win-x64`.
-4. Компилирует `installer/MDRedactor.iss`.
-5. Проверяет наличие `artifacts/installer/MDRedactorSetup-x64.exe`.
+```text
+%LOCALAPPDATA%\Programs\MD Redactor
+```
 
-Inno Setup устанавливает приложение per-user без elevation в `%LOCALAPPDATA%\Programs\MD Redactor`, создает ярлык `MD Redactor` на рабочем столе и в меню Пуск и добавляет стандартную запись удаления Windows.
+It creates desktop and Start menu shortcuts, adds a standard Windows uninstall entry, and registers MD Redactor for `.md` files in HKCU "Open with...".
 
-Регистрация `Открыть с помощью...` выполняется только в HKCU. Инсталлятор создает app registration `Software\Classes\Applications\MDRedactor.App.exe\shell\open\command` с командой `"{app}\MDRedactor.App.exe" "%1"`, friendly name `MD Redactor`, supported type `.md`, а также добавляет `MDRedactor.md` в `Software\Classes\.md\OpenWithProgids` и `MDRedactor.App.exe` в `Software\Classes\.md\OpenWithList`. Инсталлятор не записывает default value для `Software\Classes\.md`, поэтому MD Redactor появляется в `Открыть с помощью...`, но не становится редактором `.md` по умолчанию.
+The installer creates:
 
-WebView2 Runtime не входит в инсталлятор. Его наличие проверяет bootstrap; на пользовательской машине runtime должен быть установлен отдельно или через предварительную подготовку окружения.
+```text
+Software\Classes\Applications\MDRedactor.App.exe\shell\open\command
+```
 
-## Хранение правок
+with:
 
-Все будущие правки должны храниться внутри Markdown-файла. База данных, sidecar-json и другие внешние хранилища правок запрещены, чтобы документ оставался единственным источником данных.
+```text
+"{app}\MDRedactor.App.exe" "%1"
+```
+
+It also adds `MDRedactor.md` to `.md\OpenWithProgids` and `MDRedactor.App.exe` to `.md\OpenWithList`. It does not write the default value for `.md`, so it does not become the default Markdown editor automatically.
+
+## Sample
+
+`samples/scene.ru.md` is a diagnostic sample. It contains Russian prose, Markdown formatting, one inline edit, and one block edit with sparse ids.
+
+## Storage rule
+
+All edit data must stay inside the Markdown file. A database, sidecar JSON, or any other separate edit store is not allowed.

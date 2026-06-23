@@ -3,31 +3,32 @@ import { onHostMessage, postEditorMessage } from './bridge';
 import type { HostToEditorMessage } from './bridge';
 import { EditorController } from './editor/editorController';
 import type { LoadedDocument } from './editor/types';
+import { setLanguage, t } from './i18n';
 import { showNotification } from './ui/notifications';
 import { applyTheme } from './ui/theme';
 
 const appElement = document.querySelector<HTMLDivElement>('#app');
 
 if (!appElement) {
-  throw new Error('Корневой элемент редактора не найден.');
+  throw new Error(t('app.rootMissing'));
 }
 
 const app: HTMLDivElement = appElement;
 
 app.innerHTML = `
   <main class="editor-shell">
-    <section class="editor-pane" aria-label="Markdown-редактор">
+    <section class="editor-pane" id="editor-pane" aria-label="${t('app.editorAria')}">
       <div class="document-bar">
         <div>
-          <div class="document-title" id="document-title">Файл не открыт</div>
-          <div class="document-meta" id="document-meta">Кодировка: utf-8</div>
+          <div class="document-title" id="document-title">${t('app.fileNotOpened')}</div>
+          <div class="document-meta" id="document-meta">${t('app.encoding', { encoding: 'utf-8' })}</div>
         </div>
       </div>
       <div class="document-scroll">
         <div id="editor-host" class="document-page"></div>
       </div>
     </section>
-    <aside id="review-panel" class="changes-pane" aria-label="Правки"></aside>
+    <aside id="review-panel" class="changes-pane" aria-label="${t('app.reviewAria')}"></aside>
     <div id="notification" class="notification" role="status" aria-live="polite"></div>
   </main>
 `;
@@ -35,20 +36,22 @@ app.innerHTML = `
 function requireElement<TElement extends Element>(selector: string): TElement {
   const element = app.querySelector<TElement>(selector);
   if (!element) {
-    throw new Error(`Элемент редактора не найден: ${selector}`);
+    throw new Error(t('app.elementMissing', { selector }));
   }
 
   return element;
 }
 
+const editorPane = requireElement<HTMLElement>('#editor-pane');
 const documentTitle = requireElement<HTMLDivElement>('#document-title');
 const documentMeta = requireElement<HTMLDivElement>('#document-meta');
 const editorHost = requireElement<HTMLDivElement>('#editor-host');
 const reviewPanel = requireElement<HTMLElement>('#review-panel');
 const notification = requireElement<HTMLDivElement>('#notification');
 
-let currentFileName = 'Файл не открыт';
+let currentFileName = t('app.fileNotOpened');
 let currentEncodingName = 'utf-8';
+let hasLoadedDocument = false;
 
 const controller = new EditorController({
   editorHost,
@@ -63,7 +66,17 @@ const controller = new EditorController({
 
 function updateDocumentInfo(): void {
   documentTitle.textContent = currentFileName;
-  documentMeta.textContent = `Кодировка: ${currentEncodingName}`;
+  documentMeta.textContent = t('app.encoding', { encoding: currentEncodingName });
+}
+
+function updateStaticLabels(): void {
+  editorPane.setAttribute('aria-label', t('app.editorAria'));
+  reviewPanel.setAttribute('aria-label', t('app.reviewAria'));
+  if (!hasLoadedDocument) {
+    currentFileName = t('app.fileNotOpened');
+  }
+
+  updateDocumentInfo();
 }
 
 function requestSave(): void {
@@ -71,8 +84,9 @@ function requestSave(): void {
 }
 
 function loadDocument(message: Extract<HostToEditorMessage, { type: 'host.loadDocument' }>): void {
-  currentFileName = message.fileName || 'Без имени';
+  currentFileName = message.fileName || t('app.untitled');
   currentEncodingName = message.encodingName || 'utf-8';
+  hasLoadedDocument = true;
   updateDocumentInfo();
 
   controller.loadDocument(message satisfies LoadedDocument);
@@ -98,6 +112,11 @@ onHostMessage((message) => {
       case 'host.setTheme':
         applyTheme(message.theme || 'light');
         controller.setTheme(message.theme || 'light');
+        break;
+      case 'host.setLanguage':
+        setLanguage(message.language);
+        controller.setLanguage(message.language);
+        updateStaticLabels();
         break;
     }
   } catch (error) {

@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export type EditorToHostMessage =
   | { type: 'editor.ready' }
   | { type: 'editor.dirtyChanged'; isDirty: boolean }
@@ -13,7 +15,8 @@ export type HostToEditorMessage =
       encodingName: string;
     }
   | { type: 'host.requestMarkdown' }
-  | { type: 'host.setTheme'; theme: 'light' | 'dark' | string };
+  | { type: 'host.setTheme'; theme: 'light' | 'dark' | string }
+  | { type: 'host.setLanguage'; language: 'ru' | 'en' | string };
 
 type WebViewMessageEvent = {
   data: unknown;
@@ -34,7 +37,7 @@ declare global {
 
 export function postEditorMessage(message: EditorToHostMessage): void {
   if (!window.chrome?.webview) {
-    console.debug('Сообщение для приложения пропущено:', message);
+    console.debug('Host message skipped:', message);
     return;
   }
 
@@ -44,7 +47,7 @@ export function postEditorMessage(message: EditorToHostMessage): void {
 export function onHostMessage(handler: (message: HostToEditorMessage) => void): void {
   window.chrome?.webview?.addEventListener('message', (event) => {
     if (!isHostMessage(event.data)) {
-      postEditorMessage({ type: 'editor.error', message: 'Получено неизвестное сообщение приложения.' });
+      postEditorMessage({ type: 'editor.error', message: t('app.unknownHostMessage') });
       return;
     }
 
@@ -58,5 +61,8 @@ function isHostMessage(value: unknown): value is HostToEditorMessage {
   }
 
   const type = String((value as { type: unknown }).type);
-  return type === 'host.loadDocument' || type === 'host.requestMarkdown' || type === 'host.setTheme';
+  return type === 'host.loadDocument'
+    || type === 'host.requestMarkdown'
+    || type === 'host.setTheme'
+    || type === 'host.setLanguage';
 }

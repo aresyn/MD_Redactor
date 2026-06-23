@@ -22,9 +22,15 @@ SetupIconFile=..\src\MDRedactor.App\Assets\AppIcon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 WizardStyle=modern
 ChangesAssociations=yes
+ShowLanguageDialog=auto
 
 [Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+
+[CustomMessages]
+english.MarkdownDocument=MD Redactor Markdown document
+russian.MarkdownDocument=Markdown-документ MD Redactor
 
 [Files]
 Source: "..\artifacts\publish\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -46,6 +52,6 @@ Root: HKCU; Subkey: "Software\Classes\Applications\{#AppExeName}\shell\open\comm
 Root: HKCU; Subkey: "Software\Classes\.md\OpenWithList\{#AppExeName}"; Flags: uninsdeletekeyifempty
 Root: HKCU; Subkey: "Software\Classes\.md\OpenWithProgids"; ValueType: none; ValueName: "MDRedactor.md"; Flags: uninsdeletevalue
 
-Root: HKCU; Subkey: "Software\Classes\MDRedactor.md"; ValueType: string; ValueName: ""; ValueData: "Markdown-документ MD Redactor"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\MDRedactor.md"; ValueType: string; ValueName: ""; ValueData: "{cm:MarkdownDocument}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\MDRedactor.md\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\MDRedactor.md\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; Flags: uninsdeletevalue

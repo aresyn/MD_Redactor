@@ -11,11 +11,14 @@ export type EditAnnotation = {
   currentFragmentText?: string;
   rawTaggedMarkdown?: string;
   warning?: string;
+  warningCode?: string;
 };
 
 export type EditDiagnostic = {
   severity: 'error' | 'warning';
+  code?: string;
   message: string;
+  params?: Record<string, string | number | undefined>;
   index: number;
   editId?: number;
 };

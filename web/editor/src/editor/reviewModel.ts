@@ -1,4 +1,5 @@
 import type { EditAnnotation } from './types';
+import { t } from '../i18n';
 
 const previewLimit = 150;
 
@@ -11,7 +12,7 @@ export function sortAnnotationsForPanel(annotations: EditAnnotation[]): EditAnno
 }
 
 export function buildFragmentPreview(annotation: Pick<EditAnnotation, 'fragmentText' | 'fragmentMarkdown' | 'currentFragmentText'>): string {
-  const source = annotation.currentFragmentText || annotation.fragmentText || annotation.fragmentMarkdown || 'Фрагмент не найден';
+  const source = annotation.currentFragmentText || annotation.fragmentText || annotation.fragmentMarkdown || t('editor.fragmentNotFound');
   const compact = source.replace(/\s+/g, ' ').trim();
 
   if (compact.length <= previewLimit) {

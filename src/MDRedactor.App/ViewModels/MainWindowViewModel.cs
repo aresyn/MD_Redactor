@@ -5,9 +5,9 @@ namespace MDRedactor.App.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject
 {
-    private string _currentFileTitle = "Файл не открыт";
+    private string _currentFileTitle = string.Empty;
     private bool _hasUnsavedChanges;
-    private string _statusText = "Нет файла";
+    private string _statusText = string.Empty;
 
     public MainWindowViewModel(Func<Task> openAsync, Func<Task> saveAsync)
     {
@@ -37,4 +37,3 @@ public sealed class MainWindowViewModel : ObservableObject
         set => SetProperty(ref _statusText, value);
     }
 }
-

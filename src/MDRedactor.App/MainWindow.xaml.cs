@@ -26,25 +26,33 @@ public partial class MainWindow : Window
     private MarkdownDocument? _currentDocument;
     private TaskCompletionSource<string?>? _pendingMarkdownRequest;
     private AppThemePreference _themePreference;
+    private AppLanguagePreference _languagePreference;
     private string _effectiveTheme = "light";
+    private AppLanguage _effectiveLanguage = AppLanguage.English;
     private bool _isSelectingTheme;
+    private bool _isSelectingLanguage;
     private bool _editorReady;
     private bool _isSaving;
     private bool _allowClose;
     private string? _pendingStartupFilePath;
     private bool _isOpeningStartupFile;
+    private string _statusKey = AppText.StatusNoFile;
 
     public MainWindow()
     {
         InitializeComponent();
 
         _pendingStartupFilePath = GetStartupFilePathFromArguments();
-        _themePreference = AppSettingsStore.Load().Theme;
+        var initialSettings = AppSettingsStore.Load();
+        _themePreference = initialSettings.Theme;
+        _languagePreference = initialSettings.Language;
         ApplyTheme(_themePreference, saveSettings: false);
         SelectTheme(_themePreference);
+        SelectLanguage(_languagePreference);
 
         _viewModel = new MainWindowViewModel(OpenFileAsync, SaveFileAsync);
         DataContext = _viewModel;
+        ApplyLanguage(_languagePreference, saveSettings: false);
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -85,17 +93,14 @@ public partial class MainWindow : Window
         var indexPath = FindEditorIndexPath();
         if (indexPath is null)
         {
-            ShowStartupError(
-                "Web-редактор не собран. Ожидается файл:\n" +
-                $"{GetExpectedEditorIndexPath()}\n\n" +
-                "Запустите scripts\\build.ps1 и откройте приложение снова.");
+            ShowStartupError(T("WebEditorMissing", GetExpectedEditorIndexPath()));
             return;
         }
 
         try
         {
             var editorDistFolder = Path.GetDirectoryName(indexPath)
-                ?? throw new InvalidOperationException("Не удалось определить каталог web-редактора.");
+                ?? throw new InvalidOperationException(T("EditorFolderError"));
             var webViewUserDataFolder = GetWebView2UserDataFolder();
             Directory.CreateDirectory(webViewUserDataFolder);
             var webViewEnvironment = await CoreWebView2Environment.CreateAsync(userDataFolder: webViewUserDataFolder);
@@ -111,8 +116,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or COMException or WebView2RuntimeNotFoundException)
         {
-            AppLogger.LogError(ex, "Ошибка запуска WebView2");
-            ShowStartupError($"Не удалось запустить WebView2. Установите WebView2 Runtime и повторите запуск.\n\n{ex.Message}");
+            AppLogger.LogError(ex, "WebView2 startup error");
+            ShowStartupError(T("WebViewStartError", ex.Message));
         }
     }
 
@@ -123,7 +128,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var message = $"Не удалось загрузить web-редактор. Статус WebView2: {e.WebErrorStatus}.";
+        var message = T("WebViewNavigationError", e.WebErrorStatus);
         AppLogger.LogWarning(message);
         ShowStartupError(message);
     }
@@ -137,8 +142,8 @@ public partial class MainWindow : Window
 
         var dialog = new OpenFileDialog
         {
-            Title = "Открыть Markdown",
-            Filter = "Markdown (*.md)|*.md|Все файлы (*.*)|*.*",
+            Title = T("OpenDialogTitle"),
+            Filter = T("OpenDialogFilter"),
             CheckFileExists = true,
             Multiselect = false
         };
@@ -159,22 +164,22 @@ public partial class MainWindow : Window
             _currentDocument = document;
             _viewModel.CurrentFileTitle = document.FileName;
             _viewModel.HasUnsavedChanges = false;
-            _viewModel.StatusText = document.Diagnostics.Count > 0
-                ? "Сохранено. Кодировка определена автоматически"
-                : "Сохранено";
+            SetStatus(document.Diagnostics.Count > 0
+                ? AppText.StatusSavedDetectedEncoding
+                : AppText.StatusSaved);
 
             foreach (var diagnostic in document.Diagnostics)
             {
-                AppLogger.LogWarning($"Диагностика открытия: {diagnostic}", document.FilePath);
+                AppLogger.LogWarning($"Open diagnostic: {diagnostic}", document.FilePath);
             }
 
             SendDocumentToEditor(document);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
-            AppLogger.LogError(ex, "Ошибка открытия Markdown-файла", filePath);
-            _viewModel.StatusText = "Ошибка открытия";
-            ShowMessage("Ошибка открытия", $"Не удалось открыть файл.\n\n{ex.Message}");
+            AppLogger.LogError(ex, "Markdown open error", filePath);
+            SetStatus(AppText.StatusOpenError);
+            ShowMessage(T("OpenFileFailedTitle"), T("OpenFileFailedMessage", ex.Message));
         }
     }
 
@@ -193,11 +198,11 @@ public partial class MainWindow : Window
         {
             if (!File.Exists(filePath))
             {
-                AppLogger.LogWarning("Файл запуска не найден.", filePath);
-                _viewModel.StatusText = "Ошибка открытия";
+                AppLogger.LogWarning("Startup file not found.", filePath);
+                SetStatus(AppText.StatusOpenError);
                 ShowMessage(
-                    "Ошибка открытия",
-                    $"Не удалось открыть файл, переданный при запуске.\n\nФайл не найден:\n{filePath}");
+                    T("OpenFileFailedTitle"),
+                    T("StartupFileMissingMessage", filePath));
                 return;
             }
 
@@ -218,15 +223,15 @@ public partial class MainWindow : Window
     {
         if (_currentDocument is null)
         {
-            _viewModel.StatusText = "Нет файла";
+            SetStatus(AppText.StatusNoFile);
             return false;
         }
 
         var markdown = await RequestMarkdownFromEditorAsync();
         if (markdown is null)
         {
-            _viewModel.StatusText = "Ошибка сохранения";
-            ShowMessage("Ошибка сохранения", "Редактор не вернул текст для сохранения.");
+            SetStatus(AppText.StatusSaveError);
+            ShowMessage(T(AppText.StatusSaveError), T("SaveNoMarkdownMessage"));
             return false;
         }
 
@@ -237,7 +242,7 @@ public partial class MainWindow : Window
     {
         if (_currentDocument is null)
         {
-            _viewModel.StatusText = "Нет файла";
+            SetStatus(AppText.StatusNoFile);
             return false;
         }
 
@@ -251,25 +256,25 @@ public partial class MainWindow : Window
             .ToList();
         if (errors.Count > 0)
         {
-            _viewModel.StatusText = "Ошибка разметки правок";
+            SetStatus(AppText.StatusMarkupError);
             var details = FormatDiagnostics(errors);
-            AppLogger.LogWarning($"Сохранение заблокировано из-за ошибок разметки правок:\n{details}", _currentDocument.FilePath);
+            AppLogger.LogWarning($"Save blocked by edit markup errors:\n{details}", _currentDocument.FilePath);
             ShowMessage(
-                "Ошибка разметки правок",
-                "Файл не сохранен, потому что в служебной разметке правок есть ошибки.\n\n" + details);
+                T(AppText.StatusMarkupError),
+                T("MarkupSaveBlockedMessage", details));
             return false;
         }
 
         if (FileWasChangedExternally(_currentDocument) && !ShowOverwriteExternalChangeDialog())
         {
-            _viewModel.StatusText = "Есть несохраненные изменения";
+            SetStatus(AppText.StatusDirty);
             return false;
         }
 
         try
         {
             _isSaving = true;
-            _viewModel.StatusText = "Сохранение...";
+            SetStatus(AppText.StatusSaving);
 
             var documentToSave = _currentDocument with { Markdown = markdown };
             var saveResult = await _fileService.SaveAtomicAsync(documentToSave);
@@ -279,15 +284,15 @@ public partial class MainWindow : Window
                 BackupCreatedInSession = documentToSave.BackupCreatedInSession || saveResult.BackupCreated
             };
             _viewModel.HasUnsavedChanges = false;
-            _viewModel.StatusText = "Сохранено";
+            SetStatus(AppText.StatusSaved);
             SendDocumentToEditor(_currentDocument);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLogger.LogError(ex, "Ошибка сохранения Markdown-файла", _currentDocument.FilePath);
-            _viewModel.StatusText = "Ошибка сохранения";
-            ShowMessage("Ошибка сохранения", $"Не удалось сохранить файл. Исходный файл не был перезаписан.\n\n{ex.Message}");
+            AppLogger.LogError(ex, "Markdown save error", _currentDocument.FilePath);
+            SetStatus(AppText.StatusSaveError);
+            ShowMessage(T(AppText.StatusSaveError), T("SaveFileFailedMessage", ex.Message));
             return false;
         }
         finally
@@ -341,6 +346,7 @@ public partial class MainWindow : Window
                 case "editor.ready":
                     _editorReady = true;
                     SendThemeToEditor();
+                    SendLanguageToEditor();
                     if (_pendingStartupFilePath is not null)
                     {
                         _ = OpenStartupDocumentAsync();
@@ -356,9 +362,9 @@ public partial class MainWindow : Window
                     var hasUnsavedChanges = root.TryGetProperty("isDirty", out var dirtyElement)
                         && dirtyElement.ValueKind == JsonValueKind.True;
                     _viewModel.HasUnsavedChanges = hasUnsavedChanges;
-                    _viewModel.StatusText = hasUnsavedChanges
-                        ? "Есть несохраненные изменения"
-                        : _currentDocument is null ? "Нет файла" : "Сохранено";
+                    SetStatus(hasUnsavedChanges
+                        ? AppText.StatusDirty
+                        : _currentDocument is null ? AppText.StatusNoFile : AppText.StatusSaved);
                     break;
 
                 case "editor.saveRequested":
@@ -380,16 +386,16 @@ public partial class MainWindow : Window
                 case "editor.error":
                     var message = root.TryGetProperty("message", out var messageElement)
                         ? messageElement.GetString()
-                        : "неизвестная ошибка";
-                    AppLogger.LogWarning($"Ошибка редактора: {message}", _currentDocument?.FilePath);
-                    SetError($"Ошибка редактора: {message}");
+                        : T("UnknownEditorError");
+                    AppLogger.LogWarning($"Editor error: {message}", _currentDocument?.FilePath);
+                    SetError(T("EditorErrorPrefix", message));
                     break;
             }
         }
         catch (JsonException ex)
         {
-            AppLogger.LogError(ex, "Ошибка протокола WebView2");
-            SetError($"Ошибка протокола редактора: {ex.Message}");
+            AppLogger.LogError(ex, "WebView2 protocol error");
+            SetError(T("EditorProtocolError", ex.Message));
         }
     }
 
@@ -433,6 +439,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnLanguageSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isSelectingLanguage || LanguageSelector.SelectedItem is not ComboBoxItem item)
+        {
+            return;
+        }
+
+        var tag = item.Tag?.ToString();
+        if (Enum.TryParse<AppLanguagePreference>(tag, ignoreCase: true, out var language))
+        {
+            ApplyLanguage(language, saveSettings: true);
+        }
+    }
+
     private void ApplyTheme(AppThemePreference preference, bool saveSettings)
     {
         _themePreference = preference;
@@ -471,10 +491,24 @@ public partial class MainWindow : Window
 
         if (saveSettings)
         {
-            AppSettingsStore.Save(new AppSettings { Theme = preference });
+            SaveCurrentSettings();
         }
 
         SendThemeToEditor();
+    }
+
+    private void ApplyLanguage(AppLanguagePreference preference, bool saveSettings)
+    {
+        _languagePreference = preference;
+        _effectiveLanguage = AppLocalizer.Resolve(preference);
+
+        if (saveSettings)
+        {
+            SaveCurrentSettings();
+        }
+
+        UpdateLocalizedText();
+        SendLanguageToEditor();
     }
 
     private void SelectTheme(AppThemePreference preference)
@@ -499,6 +533,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SelectLanguage(AppLanguagePreference preference)
+    {
+        _isSelectingLanguage = true;
+        try
+        {
+            foreach (var item in LanguageSelector.Items.OfType<ComboBoxItem>())
+            {
+                if (string.Equals(item.Tag?.ToString(), preference.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    LanguageSelector.SelectedItem = item;
+                    return;
+                }
+            }
+
+            LanguageSelector.SelectedIndex = 0;
+        }
+        finally
+        {
+            _isSelectingLanguage = false;
+        }
+    }
+
     private void SendThemeToEditor()
     {
         if (_editorReady && EditorWebView.CoreWebView2 is not null)
@@ -507,9 +563,87 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SendLanguageToEditor()
+    {
+        if (_editorReady && EditorWebView.CoreWebView2 is not null)
+        {
+            PostToEditor(new { type = "host.setLanguage", language = AppLocalizer.Code(_effectiveLanguage) });
+        }
+    }
+
+    private void SaveCurrentSettings()
+    {
+        AppSettingsStore.Save(new AppSettings
+        {
+            Theme = _themePreference,
+            Language = _languagePreference
+        });
+    }
+
     private void SetBrush(string key, string hexColor)
     {
         Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexColor));
+    }
+
+    private void UpdateLocalizedText()
+    {
+        ThemeLabel.Text = T("ThemeLabel");
+        LanguageLabel.Text = T("LanguageLabel");
+
+        SetComboBoxItemContent(ThemeSelector, AppThemePreference.System.ToString(), T("ThemeSystem"));
+        SetComboBoxItemContent(ThemeSelector, AppThemePreference.Light.ToString(), T("ThemeLight"));
+        SetComboBoxItemContent(ThemeSelector, AppThemePreference.Dark.ToString(), T("ThemeDark"));
+        ThemeSelector.ToolTip = T("ThemeTooltip");
+
+        SetComboBoxItemContent(LanguageSelector, AppLanguagePreference.System.ToString(), T("LanguageSystem"));
+        SetComboBoxItemContent(LanguageSelector, AppLanguagePreference.Russian.ToString(), T("LanguageRussian"));
+        SetComboBoxItemContent(LanguageSelector, AppLanguagePreference.English.ToString(), T("LanguageEnglish"));
+        LanguageSelector.ToolTip = T("LanguageTooltip");
+
+        OpenButton.Content = T("OpenButton");
+        OpenButton.ToolTip = T("OpenTooltip");
+        SaveButton.Content = T("SaveButton");
+        SaveButton.ToolTip = T("SaveTooltip");
+
+        if (_currentDocument is null)
+        {
+            _viewModel.CurrentFileTitle = T(AppText.FileNotOpened);
+        }
+
+        RefreshStatus();
+    }
+
+    private static void SetComboBoxItemContent(ComboBox selector, string tag, string content)
+    {
+        foreach (var item in selector.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+            {
+                item.Content = content;
+                return;
+            }
+        }
+    }
+
+    private string T(string key)
+    {
+        return AppLocalizer.Get(_effectiveLanguage, key);
+    }
+
+    private string T(string key, params object?[] args)
+    {
+        return AppLocalizer.Format(_effectiveLanguage, key, args);
+    }
+
+    private void SetStatus(string key)
+    {
+        _statusKey = key;
+        RefreshStatus();
+    }
+
+    private void RefreshStatus()
+    {
+        _viewModel.StatusText = T(_statusKey);
     }
 
     private static bool IsSystemDarkTheme()
@@ -522,7 +656,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
         {
-            AppLogger.LogError(ex, "Не удалось определить системную тему Windows");
+            AppLogger.LogError(ex, "Could not resolve the Windows system theme");
             return false;
         }
     }
@@ -586,20 +720,23 @@ public partial class MainWindow : Window
         return currentWriteTimeUtc - document.LastWriteTimeUtc.Value > TimeSpan.FromSeconds(1);
     }
 
-    private static string FormatDiagnostics(IReadOnlyList<EditDiagnostic> diagnostics)
+    private string FormatDiagnostics(IReadOnlyList<EditDiagnostic> diagnostics)
     {
         var lines = diagnostics
             .Take(8)
             .Select(diagnostic =>
             {
-                var edit = diagnostic.EditId is null ? string.Empty : $" Правка #{diagnostic.EditId}.";
-                return $"Строка {diagnostic.Line}, колонка {diagnostic.Column}.{edit} {diagnostic.Message}";
+                var edit = diagnostic.EditId is null
+                    ? string.Empty
+                    : T("DiagnosticEditSuffix", diagnostic.EditId);
+                var message = AppLocalizer.DiagnosticMessage(_effectiveLanguage, diagnostic);
+                return T("DiagnosticLine", diagnostic.Line, diagnostic.Column, edit, message);
             })
             .ToList();
 
         if (diagnostics.Count > lines.Count)
         {
-            lines.Add($"Еще ошибок: {diagnostics.Count - lines.Count}.");
+            lines.Add(T("DiagnosticMoreErrors", diagnostics.Count - lines.Count));
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -607,12 +744,12 @@ public partial class MainWindow : Window
 
     private UnsavedChangesChoice ShowUnsavedChangesDialog()
     {
-        var dialog = CreateDialogWindow("Несохраненные изменения");
+        var dialog = CreateDialogWindow(T("UnsavedChangesTitle"));
         var panel = CreateDialogPanel();
 
         panel.Children.Add(new TextBlock
         {
-            Text = "Есть несохраненные изменения. Сохранить перед закрытием?",
+            Text = T("UnsavedChangesMessage"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)FindResource("PrimaryTextBrush"),
             Margin = new Thickness(0, 0, 0, 18)
@@ -620,17 +757,17 @@ public partial class MainWindow : Window
 
         var result = UnsavedChangesChoice.Cancel;
         var buttons = CreateDialogButtons();
-        buttons.Children.Add(CreateDialogButton("Сохранить", isPrimary: true, () =>
+        buttons.Children.Add(CreateDialogButton(T("SaveChoice"), isPrimary: true, isCancel: false, onClick: () =>
         {
             result = UnsavedChangesChoice.Save;
             dialog.DialogResult = true;
         }));
-        buttons.Children.Add(CreateDialogButton("Не сохранять", isPrimary: false, () =>
+        buttons.Children.Add(CreateDialogButton(T("DiscardChoice"), isPrimary: false, isCancel: false, onClick: () =>
         {
             result = UnsavedChangesChoice.Discard;
             dialog.DialogResult = true;
         }));
-        buttons.Children.Add(CreateDialogButton("Отмена", isPrimary: false, () =>
+        buttons.Children.Add(CreateDialogButton(T("CancelChoice"), isPrimary: false, isCancel: true, onClick: () =>
         {
             result = UnsavedChangesChoice.Cancel;
             dialog.DialogResult = false;
@@ -644,12 +781,12 @@ public partial class MainWindow : Window
 
     private bool ShowOverwriteExternalChangeDialog()
     {
-        var dialog = CreateDialogWindow("Файл изменен");
+        var dialog = CreateDialogWindow(T("ExternalChangeTitle"));
         var panel = CreateDialogPanel();
 
         panel.Children.Add(new TextBlock
         {
-            Text = "Файл был изменен другой программой. Перезаписать его?",
+            Text = T("ExternalChangeMessage"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)FindResource("PrimaryTextBrush"),
             Margin = new Thickness(0, 0, 0, 18)
@@ -657,12 +794,12 @@ public partial class MainWindow : Window
 
         var overwrite = false;
         var buttons = CreateDialogButtons();
-        buttons.Children.Add(CreateDialogButton("Перезаписать", isPrimary: true, () =>
+        buttons.Children.Add(CreateDialogButton(T("OverwriteChoice"), isPrimary: true, isCancel: false, onClick: () =>
         {
             overwrite = true;
             dialog.DialogResult = true;
         }));
-        buttons.Children.Add(CreateDialogButton("Отмена", isPrimary: false, () =>
+        buttons.Children.Add(CreateDialogButton(T("CancelChoice"), isPrimary: false, isCancel: true, onClick: () =>
         {
             overwrite = false;
             dialog.DialogResult = false;
@@ -711,7 +848,7 @@ public partial class MainWindow : Window
         };
     }
 
-    private Button CreateDialogButton(string text, bool isPrimary, Action onClick)
+    private Button CreateDialogButton(string text, bool isPrimary, bool isCancel, Action onClick)
     {
         var button = new Button
         {
@@ -723,7 +860,7 @@ public partial class MainWindow : Window
             Background = (Brush)FindResource(isPrimary ? "AccentSoftBrush" : "SurfaceMutedBrush"),
             BorderBrush = (Brush)FindResource("BorderBrush"),
             IsDefault = isPrimary,
-            IsCancel = text == "Отмена"
+            IsCancel = isCancel
         };
 
         button.Click += (_, _) => onClick();
@@ -757,14 +894,16 @@ public partial class MainWindow : Window
         StartupErrorText.Text = message;
         StartupErrorPanel.Visibility = Visibility.Visible;
         EditorWebView.Visibility = Visibility.Collapsed;
-        SetError("Ошибка");
+        SetError(T(AppText.StatusError));
     }
 
     private void SetError(string message)
     {
-        _viewModel.StatusText = message.StartsWith("Ошибка", StringComparison.Ordinal)
+        var errorPrefix = T(AppText.StatusError);
+        _viewModel.StatusText = message.StartsWith(errorPrefix, StringComparison.Ordinal)
             ? message
-            : $"Ошибка: {message}";
+            : $"{errorPrefix}: {message}";
+        _statusKey = AppText.StatusError;
     }
 
     private static string? FindEditorIndexPath()

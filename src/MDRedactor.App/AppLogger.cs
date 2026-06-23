@@ -35,7 +35,7 @@ internal static class AppLogger
 
             if (!string.IsNullOrWhiteSpace(filePath))
             {
-                builder.Append(" | Файл: ").Append(filePath);
+                builder.Append(" | File: ").Append(filePath);
             }
 
             if (!string.IsNullOrWhiteSpace(details))

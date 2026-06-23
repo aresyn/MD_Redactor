@@ -2,6 +2,7 @@ import type { EditorState, Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { getAnnotations, replaceAnnotations, setActiveAnnotation } from './annotationPlugin';
 import type { EditAnnotation } from './types';
+import { t } from '../i18n';
 
 export type CreateEditPlan =
   | { kind: 'none' }
@@ -73,7 +74,7 @@ export function buildCreateEditPlan(state: EditorState, annotations: EditAnnotat
       kind: 'blocked',
       reason: inside ? 'inside-existing' : 'intersects-existing',
       existingId: intersecting.id,
-      message: inside ? undefined : 'Выделение пересекается с уже существующей правкой',
+      message: inside ? undefined : t('selection.intersectsExisting'),
     };
   }
 
@@ -82,7 +83,7 @@ export function buildCreateEditPlan(state: EditorState, annotations: EditAnnotat
     return {
       kind: 'blocked',
       reason: 'empty-text',
-      message: 'Выделение не содержит текста для правки',
+      message: t('selection.emptyText'),
     };
   }
 
@@ -91,7 +92,7 @@ export function buildCreateEditPlan(state: EditorState, annotations: EditAnnotat
     return {
       kind: 'blocked',
       reason: 'partial-multiblock',
-      message: 'Выделение через несколько абзацев должно охватывать абзацы целиком',
+      message: t('selection.partialMultiblock'),
     };
   }
 

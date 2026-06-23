@@ -7,6 +7,8 @@ namespace MDRedactor.App;
 internal sealed record AppSettings
 {
     public AppThemePreference Theme { get; init; } = AppThemePreference.System;
+
+    public AppLanguagePreference Language { get; init; } = AppLanguagePreference.System;
 }
 
 internal enum AppThemePreference
@@ -14,6 +16,13 @@ internal enum AppThemePreference
     System,
     Light,
     Dark
+}
+
+internal enum AppLanguagePreference
+{
+    System,
+    Russian,
+    English
 }
 
 internal static class AppSettingsStore
@@ -43,7 +52,7 @@ internal static class AppSettingsStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            AppLogger.LogError(ex, "Не удалось прочитать настройки приложения");
+            AppLogger.LogError(ex, "Could not read app settings");
             return new AppSettings();
         }
     }
@@ -63,7 +72,7 @@ internal static class AppSettingsStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLogger.LogError(ex, "Не удалось сохранить настройки приложения");
+            AppLogger.LogError(ex, "Could not save app settings");
         }
     }
 

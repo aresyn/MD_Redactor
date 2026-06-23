@@ -1,142 +1,182 @@
 # MD Redactor
 
-MD Redactor — нативный Windows-редактор Markdown-файлов для авторов и редакторов, которые готовят фрагменты текста к доработке ИИ-агентом. Приложение показывает Markdown как отформатированный документ, позволяет выделять фрагменты, добавлять комментарии к правкам и сохраняет все данные обратно в тот же `.md` файл.
+English | [Russian](README_RU.md)
 
-Правки хранятся только внутри Markdown. База данных, sidecar-json и отдельные файлы правок не используются.
+MD Redactor is a Windows Markdown editor for writers, editors, and anyone who prepares text for review by an AI agent. It shows Markdown as a formatted document, lets you select a fragment, attach a comment to it, and saves the comment back into the same `.md` file.
 
-## Возможности MVP
+The file stays portable. There is no database, sidecar JSON, or separate review store. You can send the Markdown file to another person or an AI agent and the edits travel with the text.
 
-- WPF/.NET 10 приложение для Windows 10+.
-- WebView2 WYSIWYG-редактор на TypeScript, Vite и ProseMirror.
-- Светлая, темная и системная тема.
-- Открытие `.md` через кнопку, `Ctrl+O`, drag-and-drop на окно или Windows `Открыть с помощью...`.
-- Создание правки: выделить текст и нажать `Enter`.
-- Правая панель `Правки`: список, активная правка, комментарии, переход к фрагменту, удаление правки.
-- Безопасное сохранение: валидация тегов, атомарная запись, `.bak` перед первой записью в сессии.
-- Поддержка UTF-8, UTF-8 BOM, UTF-16 LE/BE BOM и Windows-1251 fallback.
+## What it solves
 
-## Основной сценарий
+- You can mark exact fragments in prose without copying them into a separate task list.
+- Comments stay next to the text they describe.
+- The editor hides service tags while you work, so Markdown looks like a document, not raw source.
+- Existing edit ids are never renumbered. Links between comments and fragments stay stable.
+- Russian text and legacy Windows-1251 Markdown files are handled safely.
 
-1. Откройте Markdown-файл.
-2. Выделите фрагмент в отформатированном документе.
-3. Нажмите `Enter`.
-4. Напишите комментарий в карточке справа.
-5. Сохраните файл через `Ctrl+S` или кнопку `Сохранить`.
-6. Передайте этот Markdown-файл ИИ-агенту: фрагменты и комментарии уже находятся внутри документа.
+## Main features
 
-Если выделение пересекается с существующей правкой, новая правка не создается. Приложение активирует существующую правку и показывает русское уведомление.
+- Native Windows 10+ desktop app built with WPF, .NET 10, and WebView2.
+- WYSIWYG Markdown editing powered by TypeScript, Vite, and ProseMirror.
+- Light, dark, and system themes.
+- Russian and English interface languages, with system language by default.
+- Open `.md` files from the app, with `Ctrl+O`, drag-and-drop, or Windows "Open with...".
+- Create an edit by selecting text and pressing `Enter`.
+- Right review panel with edit cards, comments, navigation, and deletion.
+- Safe save pipeline: edit tag validation, atomic write, and a `.bak` backup before the first save in a session.
+- UTF-8, UTF-8 BOM, UTF-16 LE/BE BOM, and Windows-1251 fallback.
 
-## Формат правок
+## Install the app
 
-Блочная правка:
-
-```markdown
-<!-- ed-start id="1" -->
-фрагмент
-<!-- ed-comm id="1"
-комментарий
--->
-<!-- ed-end id="1" -->
-```
-
-Inline-правка:
-
-```markdown
-Текст до <!-- ed-start id="2" -->фрагмент<!-- ed-comm id="2"
-комментарий
---><!-- ed-end id="2" --> текст после.
-```
-
-Все три маркера одной правки используют одинаковый положительный `id`. Id не обязаны идти подряд. При удалении правки id остальных правок не меняются. Новая правка получает `max(existing id) + 1`.
-
-Правки не имеют статусов. Атрибуты `status`, `resolved`, `open` и похожие состояния не входят в формат.
-
-## Сохранение
-
-Перед записью приложение валидирует служебные теги правок. Если найдены дубли id, несовпадающие id, незакрытые теги, `status` или небезопасные последовательности в комментариях, файл не перезаписывается. В статусе появится `Ошибка разметки правок`, а в окне ошибки будет список проблем со строками и колонками.
-
-Сохранение выполняется атомарно: сначала создается временный файл рядом с Markdown, затем исходный файл заменяется им. Перед первой записью открытого файла в рамках текущей сессии рядом создается резервная копия `имя.md.bak`. При ошибке сохранения исходный файл остается нетронутым.
-
-Если файл был изменен другой программой после открытия, приложение спросит, перезаписывать ли его. При закрытии окна или открытии другого файла с несохраненными изменениями появится выбор: `Сохранить`, `Не сохранять`, `Отмена`.
-
-Ошибки чтения и сохранения пишутся в `%LOCALAPPDATA%\MDRedactor\logs`. Лог содержит тип ошибки и путь файла, но не сохраняет текст документа.
-
-## Кодировки
-
-Внутри приложения текст хранится как Unicode. При чтении распознаются:
-
-- UTF-8 BOM;
-- UTF-8 без BOM;
-- UTF-16 LE/BE по BOM;
-- Windows-1251 как fallback, если файл невалиден как UTF-8.
-
-При сохранении используется исходная кодировка открытого файла. Новые файлы и неизвестные кодировки сохраняются как UTF-8 без BOM. Кириллица не превращается в escape-последовательности.
-
-## Горячие клавиши
-
-- `Ctrl+O` — открыть Markdown-файл.
-- `Ctrl+S` — сохранить текущий файл.
-- `Enter` при выделении в редакторе — создать правку.
-- `Enter` в поле комментария — добавить перенос строки.
-- `Escape` в редакторе — снять активную правку.
-
-## Сборка
-
-```powershell
-.\scripts\build.ps1
-```
-
-Скрипт проверяет git, .NET 10 SDK, Node.js, npm и WebView2 Runtime, собирает web-редактор, запускает web-тесты, затем выполняет restore/build/test для .NET solution.
-
-Web-часть можно проверить отдельно:
-
-```powershell
-Set-Location .\web\editor
-npm install
-npm run build
-npm test
-```
-
-## Запуск
-
-```powershell
-dotnet run --project .\src\MDRedactor.App\MDRedactor.App.csproj
-```
-
-Перед запуском нужно собрать web-часть через `.\scripts\build.ps1` или вручную выполнить `npm run build` в `web\editor`.
-
-## Упаковка
-
-```powershell
-.\scripts\package.ps1
-```
-
-Скрипт запускает bootstrap, собирает web/editor, прогоняет тесты, выполняет self-contained `dotnet publish` для `win-x64` и кладет release-сборку в `artifacts\publish\win-x64`. Web assets копируются в publish output в `web\editor\dist`.
-
-## Инсталлятор
-
-```powershell
-.\scripts\installer.ps1
-```
-
-Скрипт проверяет окружение, при необходимости устанавливает Inno Setup через `winget`, запускает `.\scripts\package.ps1` и собирает установщик:
+Download or build the installer:
 
 ```text
 artifacts\installer\MDRedactorSetup-x64.exe
 ```
 
-Инсталлятор ставит приложение для текущего пользователя без прав администратора в:
+Run the installer. It installs MD Redactor for the current Windows user without administrator rights:
 
 ```text
 %LOCALAPPDATA%\Programs\MD Redactor
 ```
 
-Во время установки создаются ярлыки `MD Redactor` на рабочем столе и в меню Пуск. Также приложение регистрируется в HKCU для Windows `Открыть с помощью...` у `.md` файлов. MD Redactor не назначается редактором Markdown по умолчанию автоматически и не меняет существующие пользовательские ассоциации.
+The installer adds shortcuts to the desktop and Start menu. It also registers MD Redactor for Windows "Open with..." on `.md` files, but it does not make MD Redactor the default Markdown editor automatically.
 
-После выбора MD Redactor в `Открыть с помощью...` Windows запускает приложение с путем к файлу, а редактор открывает этот Markdown сразу после готовности WebView2. Если файл отсутствует или не читается, пользователь увидит русское сообщение об ошибке.
+The release build includes the .NET runtime for Windows x64. WebView2 Runtime must be installed on the target machine.
 
-Release-сборка включает .NET runtime для Windows x64. Инсталлятор не встраивает WebView2 Runtime. Проверка и установка WebView2 Runtime выполняется `scripts\bootstrap.ps1`; на целевом ПК WebView2 Runtime должен быть установлен.
+## Basic workflow
 
-## Sample
+1. Open a Markdown file.
+2. Select a fragment in the formatted document.
+3. Press `Enter`.
+4. Write a comment in the card on the right.
+5. Save with `Ctrl+S` or the Save button.
+6. Send the same Markdown file to an AI agent or another reviewer.
 
-Диагностический файл находится в `samples\scene.ru.md`. В нем есть русский Markdown, inline-правка `#1` и блочная правка `#3`, чтобы проверить восстановление правок, подсветку и отсутствие перенумерации id.
+If a selection overlaps an existing edit, MD Redactor does not create a nested edit. It activates the existing edit and shows a notification.
+
+## Edit tag format
+
+Block edit:
+
+```markdown
+<!-- ed-start id="1" -->
+fragment
+<!-- ed-comm id="1"
+comment
+-->
+<!-- ed-end id="1" -->
+```
+
+Inline edit:
+
+```markdown
+Text before <!-- ed-start id="2" -->fragment<!-- ed-comm id="2"
+comment
+--><!-- ed-end id="2" --> text after.
+```
+
+All three markers of one edit use the same positive `id`. Ids do not need to be continuous. If edit `#2` is deleted from `#1`, `#2`, `#5`, the remaining ids are still `#1` and `#5`. A new edit receives `max(existing id) + 1`.
+
+Edits have no status. Attributes such as `status`, `resolved`, or `open` are not part of the format.
+
+## Saving and backups
+
+Before writing a file, MD Redactor validates edit tags. It blocks saving when it finds duplicate ids, mismatched ids, unclosed markers, unsupported `status` attributes, or unsafe HTML comment sequences.
+
+Saving is atomic:
+
+1. A temporary file is written next to the Markdown file.
+2. A backup `filename.md.bak` is created before the first save in the current session.
+3. The original file is replaced by the temporary file.
+4. If an error happens, the original file is left untouched.
+
+If the file was changed by another program after opening, MD Redactor asks before overwriting it.
+
+Read and save errors are logged to:
+
+```text
+%LOCALAPPDATA%\MDRedactor\logs
+```
+
+The log contains error type, context, and file path. It does not store the document text.
+
+## Encodings
+
+Inside the app, text is handled as Unicode. When reading files, MD Redactor detects:
+
+- UTF-8 with BOM;
+- UTF-8 without BOM;
+- UTF-16 LE/BE by BOM;
+- Windows-1251 fallback when the file is not valid UTF-8.
+
+When saving an opened file, MD Redactor keeps the detected encoding where possible. New files and unknown encodings are saved as UTF-8 without BOM.
+
+## Keyboard shortcuts
+
+- `Ctrl+O`: open a Markdown file.
+- `Ctrl+S`: save the current file.
+- `Enter` with a selection in the editor: create an edit.
+- `Enter` in a comment field: insert a line break.
+- `Escape` in the editor: clear the active edit.
+
+## Build from source
+
+Requirements:
+
+- Windows 10 or newer;
+- .NET 10 SDK;
+- Node.js and npm;
+- WebView2 Runtime.
+
+Run the full build:
+
+```powershell
+.\scripts\build.ps1
+```
+
+The script checks the environment, builds `web/editor`, runs web tests, and then restores, builds, and tests the .NET solution.
+
+Run the app from source:
+
+```powershell
+dotnet run --project .\src\MDRedactor.App\MDRedactor.App.csproj
+```
+
+Before running the app, build the web editor with `.\scripts\build.ps1` or run `npm run build` in `web\editor`.
+
+## Package and installer
+
+Create the release publish folder:
+
+```powershell
+.\scripts\package.ps1
+```
+
+Output:
+
+```text
+artifacts\publish\win-x64
+```
+
+Create the Windows installer:
+
+```powershell
+.\scripts\installer.ps1
+```
+
+Output:
+
+```text
+artifacts\installer\MDRedactorSetup-x64.exe
+```
+
+The installer is built with Inno Setup. It supports English and Russian.
+
+## Sample file
+
+Use `samples\scene.ru.md` for a quick check. It contains Russian Markdown text, one inline edit `#1`, and one block edit `#3`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

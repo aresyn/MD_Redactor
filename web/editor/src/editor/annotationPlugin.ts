@@ -2,6 +2,7 @@ import type { Node as ProseMirrorNode } from 'prosemirror-model';
 import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
 import type { EditAnnotation, EditDiagnostic } from './types';
+import { t } from '../i18n';
 
 type AnnotationPluginState = {
   annotations: EditAnnotation[];
@@ -142,9 +143,10 @@ export function mapAnnotationsToDocument(edits: EditAnnotation[], doc: ProseMirr
     const match = findTextRange(textIndex, edit.fragmentText, searchOffset);
 
     if (!match) {
-      const warning = `Не удалось надежно сопоставить правку #${edit.id} с текстом документа. При сохранении исходная разметка правки будет сохранена отдельно.`;
-      diagnostics.push({ severity: 'warning', message: warning, index: 0, editId: edit.id });
-      return { ...edit, warning };
+      const warningCode = 'editor.annotationUnmapped';
+      const warning = t(warningCode, { id: edit.id });
+      diagnostics.push({ severity: 'warning', code: warningCode, message: warning, params: { id: edit.id }, index: 0, editId: edit.id });
+      return { ...edit, warning, warningCode };
     }
 
     searchOffset = match.textEnd;
@@ -181,7 +183,7 @@ function buildDecorations(doc: ProseMirrorNode, annotations: EditAnnotation[], a
         : 'edit-annotation-badge';
       marker.dataset.editId = String(annotation.id);
       marker.textContent = `#${annotation.id}`;
-      marker.title = `Правка #${annotation.id}`;
+      marker.title = t('editor.annotationBadgeTitle', { id: annotation.id });
       return marker;
     }, { key: `annotation-${annotation.id}` }));
   }

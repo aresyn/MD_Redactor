@@ -4,6 +4,8 @@ public sealed record EditDiagnostic
 {
     public required EditDiagnosticSeverity Severity { get; init; }
 
+    public required string Code { get; init; }
+
     public required string Message { get; init; }
 
     public required int RawIndex { get; init; }
@@ -14,4 +16,3 @@ public sealed record EditDiagnostic
 
     public int? EditId { get; init; }
 }
-

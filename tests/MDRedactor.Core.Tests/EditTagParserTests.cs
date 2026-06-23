@@ -131,6 +131,7 @@ public sealed class EditTagParserTests
 
         Assert.Contains(diagnostics, diagnostic =>
             diagnostic.Severity == EditDiagnosticSeverity.Error &&
+            diagnostic.Code == EditDiagnosticCodes.DuplicateId &&
             diagnostic.Message.Contains("Дублирующийся id", StringComparison.Ordinal));
     }
 

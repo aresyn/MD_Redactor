@@ -1,4 +1,5 @@
 import type { EditAnnotation, EditDiagnostic, ParsedTaggedMarkdown } from './types';
+import { t } from '../i18n';
 
 type TagKind = 'start' | 'comm' | 'end' | 'unknown';
 
@@ -42,7 +43,7 @@ export function parseTaggedMarkdown(markdown: string): ParsedTaggedMarkdown {
 
     if (token.kind === 'unknown') {
       cleanParts.push(markdown.slice(token.start, token.end));
-      diagnostics.push(error('Неизвестный служебный маркер правки.', token.start, token.id));
+      diagnostics.push(error('edit.unknown_marker', token.start, token.id));
       position = token.end;
       continue;
     }
@@ -51,14 +52,14 @@ export function parseTaggedMarkdown(markdown: string): ParsedTaggedMarkdown {
 
     if (token.kind === 'start') {
       if (current) {
-        diagnostics.push(error('Вложенные правки запрещены: найден ed-start внутри незакрытой правки.', token.start, token.id));
+        diagnostics.push(error('edit.nested', token.start, token.id));
         current.hasError = true;
       }
 
       const idError = token.id === undefined || token.id <= 0;
       let duplicateError = false;
       if (token.id !== undefined && token.id > 0 && usedIds.has(token.id)) {
-        diagnostics.push(error(`Дублирующийся id правки ${token.id} запрещен.`, token.start, token.id));
+        diagnostics.push(error('edit.duplicate_id', token.start, token.id, { id: token.id }));
         duplicateError = true;
       }
 
@@ -81,13 +82,16 @@ export function parseTaggedMarkdown(markdown: string): ParsedTaggedMarkdown {
 
     if (token.kind === 'comm') {
       if (!current) {
-        diagnostics.push(error('Маркер ed-comm найден без открывающего ed-start.', token.start, token.id));
+        diagnostics.push(error('edit.comment_without_start', token.start, token.id));
         position = token.end;
         continue;
       }
 
       if (token.id !== current.id) {
-        diagnostics.push(error(`Id в ed-comm (${formatId(token.id)}) не совпадает с id ed-start (${current.id}).`, token.start, token.id));
+        diagnostics.push(error('edit.comment_id_mismatch', token.start, token.id, {
+          commentId: formatId(token.id),
+          startId: current.id,
+        }));
         current.hasError = true;
       }
 
@@ -97,25 +101,28 @@ export function parseTaggedMarkdown(markdown: string): ParsedTaggedMarkdown {
       current.hasComment = true;
 
       if (current.comment.includes('--')) {
-        diagnostics.push(error('Комментарий правки содержит запрещенную для HTML-comment последовательность "--".', token.commentStart, current.id));
+        diagnostics.push(error('edit.unsafe_comment', token.commentStart, current.id));
         current.hasError = true;
       }
     }
 
     if (token.kind === 'end') {
       if (!current) {
-        diagnostics.push(error('Маркер ed-end найден без открывающего ed-start.', token.start, token.id));
+        diagnostics.push(error('edit.end_without_start', token.start, token.id));
         position = token.end;
         continue;
       }
 
       if (!current.hasComment) {
-        diagnostics.push(error(`Правка id ${current.id} закрыта без обязательного ed-comm.`, token.start, current.id));
+        diagnostics.push(error('edit.missing_comment_before_end', token.start, current.id, { id: current.id }));
         current.hasError = true;
       }
 
       if (token.id !== current.id) {
-        diagnostics.push(error(`Id в ed-end (${formatId(token.id)}) не совпадает с id ed-start (${current.id}).`, token.start, token.id));
+        diagnostics.push(error('edit.end_id_mismatch', token.start, token.id, {
+          endId: formatId(token.id),
+          startId: current.id,
+        }));
         current.hasError = true;
       }
 
@@ -143,10 +150,10 @@ export function parseTaggedMarkdown(markdown: string): ParsedTaggedMarkdown {
 
   if (current) {
     if (!current.hasComment) {
-      diagnostics.push(error(`Правка id ${current.id} не содержит обязательный ed-comm.`, current.rawStart, current.id));
+      diagnostics.push(error('edit.missing_comment', current.rawStart, current.id, { id: current.id }));
     }
 
-    diagnostics.push(error(`Правка id ${current.id} не содержит закрывающий ed-end.`, current.rawStart, current.id));
+    diagnostics.push(error('edit.missing_end', current.rawStart, current.id, { id: current.id }));
   }
 
   return {
@@ -254,18 +261,18 @@ function readId(header: string): number | undefined {
 
 function collectTokenDiagnostics(token: TagToken, diagnostics: EditDiagnostic[]): void {
   if (statusPattern.test(token.header)) {
-    diagnostics.push(error('Формат правок не поддерживает атрибут status.', token.start, token.id));
+    diagnostics.push(error('edit.status_attribute', token.start, token.id));
   }
 
   if (token.id === undefined) {
-    diagnostics.push(error('Маркер правки должен содержать id в формате id="N".', token.start));
+    diagnostics.push(error('edit.missing_id', token.start));
   } else if (token.id <= 0) {
-    diagnostics.push(error('Id правки должен быть положительным целым числом.', token.start, token.id));
+    diagnostics.push(error('edit.invalid_id', token.start, token.id));
   }
 }
 
-function error(message: string, index: number, editId?: number): EditDiagnostic {
-  return { severity: 'error', message, index, editId };
+function error(code: string, index: number, editId?: number, params: Record<string, string | number | undefined> = {}): EditDiagnostic {
+  return { severity: 'error', code, message: t(code, params), params, index, editId };
 }
 
 function trimSingleTrailingLineBreak(value: string): string {
@@ -285,5 +292,5 @@ function isInlineFragment(fragmentMarkdown: string): boolean {
 }
 
 function formatId(id: number | undefined): string {
-  return id === undefined ? 'не указан' : String(id);
+  return id === undefined ? t('edit.idMissing') : String(id);
 }
