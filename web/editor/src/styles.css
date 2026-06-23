@@ -20,6 +20,9 @@
   --warning-text: #9a3412;
   --error-bg: #fef2f2;
   --error-text: #991b1b;
+  --scrollbar-track: #e6eee9;
+  --scrollbar-thumb: #9fb1a8;
+  --scrollbar-thumb-hover: #75887f;
   color: var(--text);
   background: var(--app-bg);
   font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -43,6 +46,9 @@
   --warning-text: #fdba74;
   --error-bg: #3b1f24;
   --error-text: #fca5a5;
+  --scrollbar-track: #18211c;
+  --scrollbar-thumb: #526459;
+  --scrollbar-thumb-hover: #769084;
 }
 
 html,
@@ -50,9 +56,11 @@ body,
 #app {
   width: 100%;
   height: 100%;
+  min-height: 0;
   margin: 0;
 }
 
+html,
 body {
   overflow: hidden;
 }
@@ -61,8 +69,11 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--app-bg);
 }
 
@@ -70,6 +81,8 @@ body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid var(--border);
   background: var(--app-bg);
 }
@@ -96,9 +109,41 @@ body {
 }
 
 .document-scroll {
+  position: relative;
+  height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
   padding: 30px;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.document-scroll::-webkit-scrollbar,
+.changes-pane::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.document-scroll::-webkit-scrollbar-track,
+.changes-pane::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: var(--scrollbar-track);
+}
+
+.document-scroll::-webkit-scrollbar-thumb,
+.changes-pane::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 4px solid var(--scrollbar-track);
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+.document-scroll::-webkit-scrollbar-thumb:hover,
+.changes-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 .document-page {
@@ -206,9 +251,14 @@ body {
 
 .changes-pane {
   min-width: 0;
+  min-height: 0;
   padding: 18px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--panel-bg);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .review-header {

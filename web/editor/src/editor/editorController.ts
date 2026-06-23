@@ -266,7 +266,21 @@ export class EditorController {
 
     window.requestAnimationFrame(() => {
       const target = this.view?.dom.querySelector<HTMLElement>(`[data-edit-id="${id}"]`);
-      if (target) {
+      const scrollContainer = target?.closest<HTMLElement>('.document-scroll');
+      if (target && scrollContainer) {
+        const targetRect = target.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const centeredTop = scrollContainer.scrollTop
+          + targetRect.top
+          - containerRect.top
+          - (scrollContainer.clientHeight - targetRect.height) / 2;
+
+        scrollContainer.scrollTo({
+          top: Math.max(0, centeredTop),
+          left: scrollContainer.scrollLeft,
+          behavior: 'smooth',
+        });
+      } else if (target) {
         target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
       }
     });

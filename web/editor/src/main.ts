@@ -45,6 +45,7 @@ function requireElement<TElement extends Element>(selector: string): TElement {
 const editorPane = requireElement<HTMLElement>('#editor-pane');
 const documentTitle = requireElement<HTMLDivElement>('#document-title');
 const documentMeta = requireElement<HTMLDivElement>('#document-meta');
+const documentScroll = requireElement<HTMLDivElement>('.document-scroll');
 const editorHost = requireElement<HTMLDivElement>('#editor-host');
 const reviewPanel = requireElement<HTMLElement>('#review-panel');
 const notification = requireElement<HTMLDivElement>('#notification');
@@ -83,6 +84,35 @@ function requestSave(): void {
   postEditorMessage({ type: 'editor.saveRequested', markdown: controller.getMarkdownWithTags() });
 }
 
+function installDocumentWheelScroll(): void {
+  documentScroll.addEventListener('wheel', (event) => {
+    if (event.ctrlKey || event.defaultPrevented) {
+      return;
+    }
+
+    const maxScrollTop = documentScroll.scrollHeight - documentScroll.clientHeight;
+    if (maxScrollTop <= 0) {
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, documentScroll.scrollWidth - documentScroll.clientWidth);
+    const nextScrollTop = Math.min(Math.max(documentScroll.scrollTop + event.deltaY, 0), maxScrollTop);
+    const nextScrollLeft = Math.min(
+      Math.max(documentScroll.scrollLeft + event.deltaX, 0),
+      maxScrollLeft,
+    );
+
+    if (nextScrollTop !== documentScroll.scrollTop || nextScrollLeft !== documentScroll.scrollLeft) {
+      documentScroll.scrollTo({
+        top: nextScrollTop,
+        left: nextScrollLeft,
+        behavior: 'auto',
+      });
+      event.preventDefault();
+    }
+  }, { passive: false });
+}
+
 function loadDocument(message: Extract<HostToEditorMessage, { type: 'host.loadDocument' }>): void {
   currentFileName = message.fileName || t('app.untitled');
   currentEncodingName = message.encodingName || 'utf-8';
@@ -90,6 +120,7 @@ function loadDocument(message: Extract<HostToEditorMessage, { type: 'host.loadDo
   updateDocumentInfo();
 
   controller.loadDocument(message satisfies LoadedDocument);
+  documentScroll.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   controller.focus();
 }
 
@@ -127,4 +158,5 @@ onHostMessage((message) => {
 });
 
 updateDocumentInfo();
+installDocumentWheelScroll();
 postEditorMessage({ type: 'editor.ready' });
