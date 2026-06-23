@@ -1,6 +1,17 @@
+<p align="center">
+  <img src="docs/images/AppIcon.preview.png" alt="Иконка приложения MD Redactor" width="128">
+</p>
+
 # MD Redactor
 
 [English](README.md) | Русский
+
+<p align="center">
+  <a href="https://github.com/aresyn/MD_Redactor/releases/latest"><img alt="Последний релиз" src="https://img.shields.io/github/v/release/aresyn/MD_Redactor?label=release"></a>
+  <img alt="Windows 10+" src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D4">
+  <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4">
+  <a href="LICENSE"><img alt="Лицензия MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+</p>
 
 MD Redactor помогает готовить Markdown-тексты к редактуре человеком или ИИ-агентом. Вы открываете `.md` файл как обычный отформатированный документ, выделяете фрагмент, нажимаете `Enter` и пишете комментарий справа. Комментарий сохраняется прямо в Markdown рядом с фрагментом.
 

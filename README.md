@@ -1,6 +1,17 @@
+<p align="center">
+  <img src="docs/images/AppIcon.preview.png" alt="MD Redactor app icon" width="128">
+</p>
+
 # MD Redactor
 
 English | [Russian](README_RU.md)
+
+<p align="center">
+  <a href="https://github.com/aresyn/MD_Redactor/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aresyn/MD_Redactor?label=release"></a>
+  <img alt="Windows 10+" src="https://img.shields.io/badge/platform-Windows%2010%2B-0078D4">
+  <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-green"></a>
+</p>
 
 MD Redactor is a Windows Markdown editor for writers, editors, and anyone who prepares text for review by an AI agent. It shows Markdown as a formatted document, lets you select a fragment, attach a comment to it, and saves the comment back into the same `.md` file.
 
