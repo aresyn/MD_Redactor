@@ -6,6 +6,16 @@ MD Redactor is a Windows Markdown editor for writers, editors, and anyone who pr
 
 The file stays portable. There is no database, sidecar JSON, or separate review store. You can send the Markdown file to another person or an AI agent and the edits travel with the text.
 
+## Screenshots
+
+Light theme:
+
+![MD Redactor light theme](docs/images/md-redactor-light.png)
+
+Dark theme:
+
+![MD Redactor dark theme](docs/images/md-redactor-dark.png)
+
 ## What it solves
 
 - You can mark exact fragments in prose without copying them into a separate task list.
